@@ -264,7 +264,7 @@ export async function enrichWithImages(
   const results = await Promise.all(
     recommendations.map(async (rec): Promise<Recommendation | null> => {
       try {
-        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title);
+        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title, rec.year);
         if (!verified) {
           console.warn(`Dropping unverified game: "${rec.title}" — not found in IGDB`);
           return null;
@@ -290,7 +290,7 @@ export async function enrichGroupWithImages(
   const results = await Promise.all(
     recommendations.map(async (rec): Promise<GroupRecommendation | null> => {
       try {
-        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title);
+        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title, rec.year);
         if (!verified) {
           console.warn(`Dropping unverified group game: "${rec.title}" — not found in IGDB`);
           return null;

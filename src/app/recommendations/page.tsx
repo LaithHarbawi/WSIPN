@@ -398,21 +398,22 @@ export default function RecommendationsPage() {
                 ═══════════════════════════════════════════ */}
             {heroRec && (
               <section className="relative w-full overflow-hidden" style={{ minHeight: "480px" }}>
-                {/* Background image */}
+                {/* Background image — prefer screenshot/artwork for wide hero, center on focal point */}
                 <div className="absolute inset-0">
                   {(heroRec.screenshotUrl || heroRec.imageUrl) ? (
                     <img
                       src={heroRec.screenshotUrl || heroRec.imageUrl}
                       alt=""
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover object-top"
+                      loading="eager"
                     />
                   ) : (
                     <div className="w-full h-full bg-bg-tertiary" />
                   )}
-                  {/* Gradient overlays */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-bg-primary via-bg-primary/80 to-transparent" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/40 to-transparent" />
-                  <div className="absolute inset-0 bg-bg-primary/20" />
+                  {/* Gradient overlays — stronger to ensure text readability */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-bg-primary via-bg-primary/85 to-bg-primary/20" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/50 to-transparent" />
+                  <div className="absolute inset-0 bg-bg-primary/15" />
                 </div>
 
                 {/* Hero content */}
