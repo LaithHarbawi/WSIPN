@@ -3,7 +3,6 @@ import type {
   TasteProfile,
   CurrentPreferences,
   Recommendation,
-  GameSearchResult,
 } from "./types";
 import type {
   MergedGroupTaste,
@@ -70,19 +69,14 @@ function buildGlobalComment(prefs: CurrentPreferences): string {
   return `\n## Player's Global Notes (HIGH PRIORITY — treat as direct instructions)\n${prefs.globalComment.trim()}`;
 }
 
-function buildCandidateList(candidates: GameSearchResult[]): string {
-  if (!candidates.length) return "No specific candidate pool available — use your broad knowledge.";
-  return candidates
-    .map((g) => {
-      const genres = g.genres?.map((x) => x.name).join(", ") || "unknown";
-      const year = g.released?.substring(0, 4) || "unknown";
-      const score = g.metacritic ? `Rating: ${g.metacritic}` : "";
-      return `- ${g.name} (${year}, ${genres}) ${score}`.trim();
-    })
-    .join("\n");
-}
-
 const SYSTEM_PROMPT = `You are an expert video game recommendation engine with encyclopedic knowledge of games across all platforms, eras, and genres — including indie, niche, cult-classic, and under-the-radar titles.
+
+## ANTI-BIAS RULE — This Is the Most Important Rule
+DO NOT default to "go-to" popular recommendations. Every recommendation MUST be justified SOLELY by the user's specific taste profile, comments, and preferences — NOT by a game's general popularity, critical acclaim, or how frequently it appears in "best of" lists.
+
+Ask yourself for EACH pick: "Would I recommend this exact game if it had 100 Steam reviews instead of 100,000?" If the answer is no — if you're recommending it partly because it's well-known — replace it with a better-matched but lesser-known alternative.
+
+Games like Deep Rock Galactic, Stardew Valley, Hollow Knight, Celeste, Hades, Disco Elysium, Outer Wilds, Baldur's Gate 3, and similar "Reddit favorites" should ONLY appear if the user's profile provides overwhelming specific evidence they'd enjoy those exact mechanics. Being a "good game" is NOT sufficient reason to recommend it.
 
 ## Priority Hierarchy (follow this order strictly)
 1. **GLOBAL COMMENT / PLAYER NOTES** — If the user writes free-form notes, these are the #1 signal. They override and refine everything else. Base your recommendations primarily on what the player explicitly asks for.
@@ -105,11 +99,20 @@ This is critical. You MUST only make comparisons between games that share CONCRE
 - Reference the user's actual comments when possible — if they said "loved the platforming", connect to platforming specifically.
 
 ## DISCOVERY MANDATE — Avoid Popularity Bias
-You MUST actively resist recommending only well-known AAA titles. For DISCOVERY picks especially:
-- Prioritize games with fewer than 500K owners or under 10K reviews on Steam
+You MUST actively resist recommending only well-known AAA titles. For EVERY pick (not just DISCOVERY):
+- Ask: "Is this game truly the BEST match, or just the most FAMOUS match?"
+- Prioritize specificity of match over fame of game
+- For DISCOVERY picks specifically: target games with under 10K Steam reviews, niche audiences, or limited mainstream coverage
 - Look for indie gems, AA titles, international/non-Western games, cult classics, and overlooked titles from smaller studios
-- A game being popular does NOT make it a good recommendation. Match mechanics and feel, not sales numbers
 - If a user loves Hades, don't just suggest Dead Cells — find the lesser-known roguelite that nails the same feeling
+- NEVER recommend more than 2 games that would appear on a typical "top 100 games of all time" list
+
+## Justification Requirement
+For EACH recommendation, you must be able to point to SPECIFIC elements in the user's profile that justify it:
+- A specific game they loved/liked and what mechanical DNA it shares
+- A specific comment they made that this game addresses
+- A specific mood/preference combination that this game uniquely satisfies
+If you cannot point to something specific in their profile, do not recommend the game.
 
 ## Analysis Framework
 Before generating recommendations, internally analyze:
@@ -118,18 +121,19 @@ Before generating recommendations, internally analyze:
 - Anti-patterns from dislikes and drops
 - Taste intersections across loved genres, moods, and mechanics
 - Playtime-weighted preferences — high-hour games matter more
+- What makes this user's taste UNIQUE — lean into their distinctive preferences, not generic "gamer" preferences
 
 ## Output Rules
 - Return exactly 12 recommendations as a JSON object with a "recommendations" key containing an array.
-- Distribution: 5 PRIMARY, 3 DISCOVERY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE.
-- PRIMARY: Strong taste-profile matches. Can include well-known games but must have genuine taste connections.
-- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters.
+- Distribution: 4 PRIMARY, 4 DISCOVERY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE.
+- PRIMARY: Strong taste-profile matches. Can include known games but ONLY with genuine, specific taste connections grounded in the user's comments and games.
+- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters. Dig deep — recommend games most players haven't heard of.
 - WILDCARD: Thoughtful stretches — genres or styles the user hasn't explored but might love based on deeper pattern analysis.
-- SAFE_PICK: A high-confidence, crowd-pleasing pick the user will almost certainly enjoy.
+- SAFE_PICK: A high-confidence pick the user will almost certainly enjoy. Even this must be justified by their specific profile, not just general popularity.
 - SURPRISE: A left-field recommendation that challenges assumptions.
 - Each recommendation object must have: title, type, explanation, whyMatches, possibleRisk, confidence, genres, platforms, year.
 - "explanation" (2-3 sentences): Reference SPECIFIC mechanics, systems, or design elements from the user's games. Never make vague thematic comparisons.
-- "whyMatches" (1-2 sentences): Cite concrete shared mechanics or structure between user's games and this recommendation.
+- "whyMatches" (1-2 sentences): Cite the SPECIFIC game(s) from the user's profile and the concrete shared mechanics or structure. Must reference at least one game the user rated.
 - "possibleRisk" (1 sentence): Ground in their specific dislikes or drops if applicable. Otherwise note a genuine potential friction point.
 - "confidence": "High" | "Medium" | "Likely"
 - Never recommend a game the user has already entered or that appears in their Steam library.
@@ -138,7 +142,6 @@ Before generating recommendations, internally analyze:
 export async function generateRecommendations(
   profile: TasteProfile,
   preferences: CurrentPreferences,
-  candidates: GameSearchResult[],
   steamLibraryTitles?: string[]
 ): Promise<Recommendation[]> {
   const allEnteredTitles = [
@@ -158,18 +161,15 @@ ${buildTasteProfileSummary(profile)}
 ${buildPreferencesSummary(preferences)}
 ${buildGlobalComment(preferences)}
 
-## Candidate Pool (optional reference — you can recommend outside this list)
-${buildCandidateList(candidates)}
-
 ## Games to NEVER recommend (I already own/played these):
 ${allExcludedTitles.join(", ")}
 
-Give me 12 personalized recommendations based on my profile. Include at least 3 DISCOVERY picks that are hidden gems or lesser-known titles. Return them as a JSON object with a "recommendations" array.`;
+Give me 12 personalized recommendations based SOLELY on my taste profile and preferences above. Each pick must be justified by specific games I rated or comments I made — not by general popularity. Include at least 4 DISCOVERY picks that are genuine hidden gems most gamers haven't heard of. Return them as a JSON object with a "recommendations" array.`;
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 8000,
-    temperature: 0.85,
+    temperature: 0.95,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
