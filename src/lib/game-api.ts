@@ -141,33 +141,52 @@ export async function getPopularGames(
   }
 }
 
-// Search IGDB for a single game by name (for image enrichment)
+// Search IGDB for a single game by name (for image enrichment + validation)
 // Returns high-res cover (720p) and optional screenshot for hero display
+// `verified` is true only when IGDB returns a game whose name closely matches the query
 export async function findGameByName(
   title: string
-): Promise<{ imageUrl: string | null; screenshotUrl: string | null; rating: number | null }> {
+): Promise<{ imageUrl: string | null; screenshotUrl: string | null; rating: number | null; verified: boolean }> {
   try {
     const raw = (await igdbFetch(
       "games",
       `search "${title.replace(/"/g, '\\"')}";
        fields name, cover.image_id, screenshots.image_id, artworks.image_id, total_rating;
-       limit 1;`
+       limit 5;`
     )) as Array<{
+      name: string;
       cover?: { image_id: string };
       screenshots?: { image_id: string }[];
       artworks?: { image_id: string }[];
       total_rating?: number;
     }>;
 
-    const game = raw[0];
+    // Find best match — exact or close enough
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const target = normalize(title);
+    const match = raw.find((g) => normalize(g.name) === target)
+      ?? raw.find((g) => normalize(g.name).includes(target) || target.includes(normalize(g.name)))
+      ?? raw[0];
+
+    if (!match) {
+      return { imageUrl: null, screenshotUrl: null, rating: null, verified: false };
+    }
+
+    // Verify the match is close enough to the requested title
+    const matchNorm = normalize(match.name);
+    const verified = matchNorm === target
+      || matchNorm.includes(target)
+      || target.includes(matchNorm);
+
     // Use 720p for cover (high res), screenshot_big for backgrounds
-    const artworkId = game?.artworks?.[0]?.image_id ?? game?.screenshots?.[0]?.image_id;
+    const artworkId = match.artworks?.[0]?.image_id ?? match.screenshots?.[0]?.image_id;
     return {
-      imageUrl: igdbImageUrl(game?.cover?.image_id, "720p") ?? null,
+      imageUrl: igdbImageUrl(match.cover?.image_id, "720p") ?? null,
       screenshotUrl: igdbImageUrl(artworkId, "screenshot_big") ?? null,
-      rating: game?.total_rating ? Math.round(game.total_rating) : null,
+      rating: match.total_rating ? Math.round(match.total_rating) : null,
+      verified,
     };
   } catch {
-    return { imageUrl: null, screenshotUrl: null, rating: null };
+    return { imageUrl: null, screenshotUrl: null, rating: null, verified: false };
   }
 }

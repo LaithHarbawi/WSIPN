@@ -92,6 +92,9 @@ const SYSTEM_PROMPT = `You are an expert video game recommendation engine with e
 5. **Liked games** — Secondary positive signal.
 6. **Session preferences** (genres, mood, difficulty, etc.) — Act as filters on top of taste.
 
+## REALITY RULE — Only Real Games
+CRITICAL: Every game you recommend MUST be a real, commercially released video game that can be purchased or downloaded. NEVER invent, fabricate, or hallucinate game titles. If you are not certain a game exists, do not recommend it. Stick to games you are confident are real.
+
 ## ACCURACY RULES — No Fabricated Connections
 This is critical. You MUST only make comparisons between games that share CONCRETE, VERIFIABLE mechanical or structural similarities:
 - GOOD: "Like Hollow Knight, this is a 2D metroidvania with tight combat and interconnected map exploration."
@@ -229,14 +232,19 @@ Give me 12 personalized recommendations based on my profile. Include at least 3 
   }));
 }
 
-// Enrich recommendations with IGDB images (high-res covers + screenshots)
+// Enrich recommendations with IGDB images + filter out hallucinated games
+// Any game that IGDB cannot verify is dropped from the results
 export async function enrichWithImages(
   recommendations: Recommendation[]
 ): Promise<Recommendation[]> {
-  const enriched = await Promise.all(
-    recommendations.map(async (rec) => {
+  const results = await Promise.all(
+    recommendations.map(async (rec): Promise<Recommendation | null> => {
       try {
-        const { imageUrl, screenshotUrl, rating } = await findGameByName(rec.title);
+        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title);
+        if (!verified) {
+          console.warn(`Dropping unverified game: "${rec.title}" — not found in IGDB`);
+          return null;
+        }
         return {
           ...rec,
           imageUrl: imageUrl ?? rec.imageUrl,
@@ -244,21 +252,25 @@ export async function enrichWithImages(
           metacritic: rating ?? rec.metacritic,
         };
       } catch {
-        return rec;
+        return null; // Can't verify — drop it
       }
     })
   );
-  return enriched;
+  return results.filter((r): r is Recommendation => r !== null);
 }
 
-// Enrich group recommendations with IGDB images
+// Enrich group recommendations with IGDB images + filter out hallucinated games
 export async function enrichGroupWithImages(
   recommendations: GroupRecommendation[]
 ): Promise<GroupRecommendation[]> {
-  const enriched = await Promise.all(
-    recommendations.map(async (rec) => {
+  const results = await Promise.all(
+    recommendations.map(async (rec): Promise<GroupRecommendation | null> => {
       try {
-        const { imageUrl, screenshotUrl, rating } = await findGameByName(rec.title);
+        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title);
+        if (!verified) {
+          console.warn(`Dropping unverified group game: "${rec.title}" — not found in IGDB`);
+          return null;
+        }
         return {
           ...rec,
           imageUrl: imageUrl ?? rec.imageUrl,
@@ -266,16 +278,19 @@ export async function enrichGroupWithImages(
           metacritic: rating ?? rec.metacritic,
         };
       } catch {
-        return rec;
+        return null;
       }
     })
   );
-  return enriched;
+  return results.filter((r): r is GroupRecommendation => r !== null);
 }
 
 // ── Group Recommendations ──
 
 const GROUP_SYSTEM_PROMPT = `You are an expert video game recommendation engine specialized in finding games that work for GROUPS of players with different tastes. You will receive a merged taste summary showing how multiple players' preferences overlap and conflict.
+
+## REALITY RULE — Only Real Games
+Every game you recommend MUST be a real, commercially released video game. NEVER invent or fabricate game titles.
 
 ## Core Principles
 1. Group recommendations must satisfy the MOST people — prioritize high-overlap games.
