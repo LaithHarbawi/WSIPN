@@ -137,7 +137,14 @@ export default function RecommendationsPage() {
       });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      setRecommendations(filterNotInterested(data.recommendations));
+      // Hard filter: remove not-interested + all previously shown games
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const prevNorm = [...previouslyShownRef.current].map(normalize);
+      const cleaned = filterNotInterested(data.recommendations).filter((r: { title: string }) => {
+        const rNorm = normalize(r.title);
+        return !prevNorm.some((p) => p === rNorm || p.includes(rNorm) || rNorm.includes(p));
+      });
+      setRecommendations(cleaned);
       saveFeedbackMap({}); // Reset feedback for new recs
     } catch {
       // Keep current recommendations on error
@@ -211,7 +218,17 @@ export default function RecommendationsPage() {
         });
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
-        setRecommendations(filterNotInterested(data.recommendations));
+        // Hard filter: remove the source game + not-interested + all previously shown
+        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const sourceNorm = normalize(sourceRec.title);
+        const prevNorm = [...previouslyShownRef.current].map(normalize);
+        const cleaned = filterNotInterested(data.recommendations).filter((r: { title: string }) => {
+          const rNorm = normalize(r.title);
+          if (rNorm === sourceNorm || sourceNorm.includes(rNorm) || rNorm.includes(sourceNorm)) return false;
+          if (prevNorm.some((p) => p === rNorm || p.includes(rNorm) || rNorm.includes(p))) return false;
+          return true;
+        });
+        setRecommendations(cleaned);
         saveFeedbackMap({}); // Reset feedback for new recs
       } catch {
         // Keep current on error
