@@ -275,22 +275,83 @@ export function removeNotInterested(title: string) {
   setItem(KEYS.notInterested, list);
 }
 
-// ── Recommendation History (persistent across sessions — prevents repeats) ──
+// ── Recommendation History (cooldown-based — prevents short-term repeats) ──
+// Games are on cooldown for COOLDOWN_DAYS unless the user changes their preferences,
+// which generates a different prefHash and makes all old recs eligible again.
+
+export interface RecHistoryEntry {
+  title: string;
+  recommendedAt: number;  // timestamp
+  prefHash: string;       // hash of preferences when recommended
+}
 
 const MAX_REC_HISTORY = 200;
+const COOLDOWN_DAYS = 3;
 
-export function getRecHistory(): string[] {
+/** Simple deterministic hash of preference + taste profile state */
+export function buildPrefHash(
+  prefs: CurrentPreferences,
+  profile: TasteProfile
+): string {
+  const parts = [
+    prefs.genres.sort().join(","),
+    prefs.moods.sort().join(","),
+    prefs.difficulty,
+    prefs.gameLength,
+    prefs.playerMode,
+    prefs.era,
+    prefs.timeCommitment,
+    (prefs.platforms ?? []).sort().join(","),
+    // Include game titles so adding/removing games changes the hash
+    [...profile.loved, ...profile.liked, ...profile.disliked]
+      .map((g) => g.title.toLowerCase())
+      .sort()
+      .join(","),
+  ];
+  // Simple hash — not cryptographic, just needs to detect changes
+  let hash = 0;
+  const str = parts.join("|");
+  for (let i = 0; i < str.length; i++) {
+    const chr = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32-bit integer
+  }
+  return hash.toString(36);
+}
+
+export function getRecHistory(): RecHistoryEntry[] {
   return getItem(KEYS.recHistory, []);
 }
 
-export function addToRecHistory(titles: string[]) {
+/** Get titles currently on cooldown (same prefHash + within cooldown window) */
+export function getCooldownTitles(currentPrefHash: string): string[] {
+  const entries = getRecHistory();
+  const now = Date.now();
+  const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+  return entries
+    .filter((e) => e.prefHash === currentPrefHash && (now - e.recommendedAt) < cooldownMs)
+    .map((e) => e.title);
+}
+
+export function addToRecHistory(titles: string[], prefHash: string) {
   const existing = getRecHistory();
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const existingNorm = new Set(existing.map(normalize));
-  const newTitles = titles.filter((t) => !existingNorm.has(normalize(t)));
-  if (newTitles.length === 0) return;
-  const updated = [...existing, ...newTitles].slice(-MAX_REC_HISTORY);
-  setItem(KEYS.recHistory, updated);
+  const existingNorm = new Set(existing.map((e) => normalize(e.title)));
+  const now = Date.now();
+  const newEntries: RecHistoryEntry[] = titles
+    .filter((t) => !existingNorm.has(normalize(t)))
+    .map((title) => ({ title, recommendedAt: now, prefHash }));
+  if (newEntries.length === 0) {
+    // Update timestamps for re-recommended games (same prefHash)
+    const updated = existing.map((e) => {
+      const eNorm = normalize(e.title);
+      const match = titles.find((t) => normalize(t) === eNorm);
+      return match ? { ...e, recommendedAt: now, prefHash } : e;
+    });
+    setItem(KEYS.recHistory, updated.slice(-MAX_REC_HISTORY));
+    return;
+  }
+  setItem(KEYS.recHistory, [...existing, ...newEntries].slice(-MAX_REC_HISTORY));
 }
 
 export function clearRecHistory() {

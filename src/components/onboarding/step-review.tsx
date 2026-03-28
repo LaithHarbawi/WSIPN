@@ -52,9 +52,11 @@ export function StepReview() {
       : [];
 
     try {
-      // Include previously recommended games as exclusions to prevent repeats
-      const recHistory = guestStorage.getRecHistory();
+      // Build cooldown-aware exclusion list
+      const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
+      const cooldownTitles = guestStorage.getCooldownTitles(prefHash);
       const allNotInterested = guestStorage.getNotInterestedTitles();
+      const excludeList = [...new Set([...allNotInterested, ...cooldownTitles])];
 
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
@@ -63,15 +65,14 @@ export function StepReview() {
           tasteProfile,
           preferences,
           steamLibraryTitles,
-          notInterestedTitles: [...allNotInterested, ...recHistory],
+          notInterestedTitles: excludeList,
         }),
       });
 
       if (!res.ok) throw new Error("Generation failed");
       const data = await res.json();
 
-      // Hard filter: strip any not-interested or previously recommended games the LLM returned anyway
-      const excludeList = [...allNotInterested, ...recHistory];
+      // Hard filter: strip any excluded games the LLM returned anyway
       const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
       const excludeNorm = excludeList.map(normalize);
       const filtered = excludeList.length > 0
@@ -86,8 +87,11 @@ export function StepReview() {
           })
         : data.recommendations;
 
-      // Save recommended titles to persistent history
-      guestStorage.addToRecHistory(filtered.map((r: { title: string }) => r.title));
+      // Save recommended titles to cooldown history
+      guestStorage.addToRecHistory(
+        filtered.map((r: { title: string }) => r.title),
+        prefHash
+      );
       setRecommendations(filtered);
     } catch (error) {
       console.error("Failed to generate recommendations:", error);

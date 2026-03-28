@@ -11,9 +11,20 @@ import type {
 } from "./group-merge";
 import { findGameByName } from "./game-api";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Use Gemini 2.0 Flash via OpenAI-compatible endpoint (free tier: 15 RPM, 1M TPM)
+// Falls back to OpenAI GPT-4o if no Gemini key is set
+const useGemini = !!process.env.GEMINI_API_KEY;
+
+const client = new OpenAI(
+  useGemini
+    ? {
+        apiKey: process.env.GEMINI_API_KEY,
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      }
+    : { apiKey: process.env.OPENAI_API_KEY }
+);
+
+const MODEL = useGemini ? "gemini-2.0-flash" : "gpt-4o";
 
 function buildTasteProfileSummary(profile: TasteProfile): string {
   const sections: string[] = [];
@@ -166,8 +177,8 @@ ${allExcludedTitles.join(", ")}
 
 Give me 12 personalized recommendations based SOLELY on my taste profile and preferences above. Each pick must be justified by specific games I rated or comments I made — not by general popularity. Include at least 4 DISCOVERY picks that are genuine hidden gems most gamers haven't heard of. Return them as a JSON object with a "recommendations" array.`;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const completion = await client.chat.completions.create({
+    model: MODEL,
     max_tokens: 8000,
     temperature: 0.9,
     response_format: { type: "json_object" },
@@ -406,8 +417,8 @@ ${Array.from(allTitles).join(", ")}
 
 Find 7 games this group can enjoy together. Return as JSON with a "recommendations" array.`;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const completion = await client.chat.completions.create({
+    model: MODEL,
     max_tokens: 5000,
     temperature: 0.85,
     response_format: { type: "json_object" },

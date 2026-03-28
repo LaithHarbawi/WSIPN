@@ -84,7 +84,7 @@ export default function RecommendationsPage() {
     setHydrated(true);
   }, [hydrate]);
 
-  // Track every recommendation title we've ever shown — persist to both sessionStorage and rec history
+  // Track every recommendation title we've ever shown — persist to sessionStorage + cooldown history
   useEffect(() => {
     if (recommendations.length === 0) return;
     for (const r of recommendations) {
@@ -96,9 +96,10 @@ export default function RecommendationsPage() {
         JSON.stringify([...previouslyShownRef.current])
       );
     } catch { /* ignore */ }
-    // Also persist to long-term rec history (survives across sessions)
-    guestStorage.addToRecHistory(recommendations.map((r) => r.title));
-  }, [recommendations]);
+    // Also persist to cooldown-based rec history
+    const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
+    guestStorage.addToRecHistory(recommendations.map((r) => r.title), prefHash);
+  }, [recommendations, preferences, tasteProfile]);
 
   const saveFeedbackMap = useCallback((map: Record<string, RecommendationFeedback>) => {
     setFeedbackMap(map);
@@ -112,8 +113,6 @@ export default function RecommendationsPage() {
       .filter((g) => g.playtimeHours >= 5)
       .map((g) => g.name);
   }, []);
-
-  // filterNotInterested is now handled by hardFilterExclusions below
 
   // Normalize types (LLM may return uppercase like "PRIMARY")
   const normalized = recommendations.map((r) => ({
@@ -131,15 +130,14 @@ export default function RecommendationsPage() {
   const heroRec = primary[0];
   const remainingPrimary = primary.slice(1);
 
-  // getExcludedTitles is now handled by buildExclusionList below
-
-  /** Build full exclusion list: not-interested + rec history + session previously shown */
+  /** Build full exclusion list: not-interested + cooldown titles + session previously shown */
   const buildExclusionList = useCallback((): string[] => {
     const ni = guestStorage.getNotInterestedTitles();
-    const history = guestStorage.getRecHistory();
+    const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
+    const cooldown = guestStorage.getCooldownTitles(prefHash);
     const sessionPrev = [...previouslyShownRef.current];
-    return [...new Set([...ni, ...history, ...sessionPrev])];
-  }, []);
+    return [...new Set([...ni, ...cooldown, ...sessionPrev])];
+  }, [preferences, tasteProfile]);
 
   /** Hard client-side filter: remove any game in the exclusion list that the LLM returned anyway */
   const hardFilterExclusions = useCallback((recs: typeof recommendations, extraExclusions: string[] = []) => {
@@ -184,7 +182,8 @@ export default function RecommendationsPage() {
       const data = await res.json();
       const cleaned = hardFilterExclusions(data.recommendations);
       // Save to persistent history
-      guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title));
+      const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
+      guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title), prefHash);
       setRecommendations(cleaned);
       saveFeedbackMap({}); // Reset feedback for new recs
     } catch (e) {
@@ -274,7 +273,8 @@ export default function RecommendationsPage() {
         // Hard filter: remove source game + all exclusions
         const cleaned = hardFilterExclusions(data.recommendations, [sourceRec.title]);
         // Save to persistent history
-        guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title));
+        const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
+      guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title), prefHash);
         setRecommendations(cleaned);
         saveFeedbackMap({}); // Reset feedback for new recs
       } catch (e) {
