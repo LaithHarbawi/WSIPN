@@ -143,7 +143,7 @@ export function StepReview() {
             Your Taste Profile
           </h3>
           <button
-            onClick={() => setOnboardingStep(1)}
+            onClick={() => setOnboardingStep(2)}
             className="flex items-center gap-1.5 text-sm text-accent-primary hover:text-accent-primary/80 transition-colors font-medium"
           >
             <Edit3 className="h-3.5 w-3.5" />
@@ -211,7 +211,7 @@ export function StepReview() {
             Current Mood
           </h3>
           <button
-            onClick={() => setOnboardingStep(2)}
+            onClick={() => setOnboardingStep(1)}
             className="flex items-center gap-1.5 text-sm text-accent-primary hover:text-accent-primary/80 transition-colors font-medium"
           >
             <Edit3 className="h-3.5 w-3.5" />
@@ -277,7 +277,7 @@ export function StepReview() {
               </h3>
             </div>
             <button
-              onClick={() => setOnboardingStep(2)}
+              onClick={() => setOnboardingStep(1)}
               className="flex items-center gap-1.5 text-sm text-accent-primary hover:text-accent-primary/80 transition-colors font-medium"
             >
               <Edit3 className="h-3.5 w-3.5" />
@@ -309,7 +309,7 @@ export function StepReview() {
           onClick={() => setOnboardingStep(2)}
           className="text-sm text-text-muted hover:text-text-primary transition-colors"
         >
-          Back to preferences
+          Back to taste profile
         </button>
       </div>
     </div>

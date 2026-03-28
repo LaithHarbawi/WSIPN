@@ -6,6 +6,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Download,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GameSearchInput } from "@/components/ui/game-search-input";
@@ -168,7 +169,7 @@ export function StepTasteProfile() {
         {totalGames >= 1 && (
           <Button
             size="sm"
-            onClick={() => setOnboardingStep(2)}
+            onClick={() => setOnboardingStep(3)}
             className="flex-shrink-0"
           >
             Continue →
@@ -227,24 +228,44 @@ export function StepTasteProfile() {
         </div>
       )}
 
+      {/* Skippable notice */}
+      {totalGames === 0 && (
+        <div className="rounded-2xl bg-accent-primary/5 border border-accent-primary/15 px-5 py-3.5 flex items-center gap-3">
+          <Sparkles className="h-4 w-4 text-accent-primary flex-shrink-0" />
+          <p className="text-sm text-text-secondary leading-relaxed flex-1">
+            <strong className="text-text-primary font-medium">Highly recommended:</strong> Adding games you love and dislike dramatically improves your recommendations. You can skip this, but results will be more generic.
+          </p>
+        </div>
+      )}
+
       {/* Navigation */}
       <div className="flex items-center justify-between pt-6 border-t border-border-subtle">
         <button
-          onClick={() => setOnboardingStep(0)}
+          onClick={() => setOnboardingStep(1)}
           className="text-sm text-text-muted hover:text-text-primary transition-colors font-medium"
         >
           ← Back
         </button>
         <div className="flex items-center gap-4">
-          <span className="text-[13px] text-text-muted font-medium">
-            {totalGames} game{totalGames !== 1 ? "s" : ""} added
-          </span>
-          <Button
-            onClick={() => setOnboardingStep(2)}
-            disabled={totalGames < 1}
-          >
-            Continue
-          </Button>
+          {totalGames > 0 && (
+            <span className="text-[13px] text-text-muted font-medium">
+              {totalGames} game{totalGames !== 1 ? "s" : ""} added
+            </span>
+          )}
+          {totalGames === 0 ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setOnboardingStep(3)}
+                className="text-sm text-text-muted hover:text-text-primary transition-colors font-medium px-3 py-2 rounded-lg hover:bg-surface-hover"
+              >
+                Skip for now
+              </button>
+            </div>
+          ) : (
+            <Button onClick={() => setOnboardingStep(3)}>
+              Continue
+            </Button>
+          )}
         </div>
       </div>
     </div>

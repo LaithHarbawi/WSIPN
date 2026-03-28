@@ -10,7 +10,7 @@ import { StepReview } from "@/components/onboarding/step-review";
 import { WsipnLogo } from "@/components/ui/wsipn-logo";
 import Link from "next/link";
 
-const STEP_LABELS = ["Welcome", "Taste Profile", "Preferences", "Review"];
+const STEP_LABELS = ["Welcome", "Preferences", "Taste Profile", "Review"];
 
 export default function OnboardingPage() {
   const { onboardingStep, hydrate } = useAppStore();
@@ -57,8 +57,8 @@ export default function OnboardingPage() {
       {/* Content */}
       <main className="relative z-10 flex-1 px-6 pb-16 pt-2">
         {onboardingStep === 0 && <StepWelcome />}
-        {onboardingStep === 1 && <StepTasteProfile />}
-        {onboardingStep === 2 && <StepPreferences />}
+        {onboardingStep === 1 && <StepPreferences />}
+        {onboardingStep === 2 && <StepTasteProfile />}
         {onboardingStep === 3 && <StepReview />}
       </main>
     </div>

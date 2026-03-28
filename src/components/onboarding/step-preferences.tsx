@@ -307,16 +307,16 @@ export function StepPreferences() {
       {/* Premium navigation footer */}
       <div className="flex items-center justify-between pt-6 pb-2 border-t border-border-subtle/60">
         <button
-          onClick={() => setOnboardingStep(1)}
+          onClick={() => setOnboardingStep(0)}
           className="text-sm font-medium text-text-muted hover:text-text-primary transition-colors duration-200 px-3 py-2 -ml-3 rounded-lg hover:bg-surface-hover"
         >
           &larr; Back
         </button>
         <Button
-          onClick={() => setOnboardingStep(3)}
+          onClick={() => setOnboardingStep(2)}
           className="px-6 py-2.5 font-semibold shadow-lg shadow-accent-primary/20"
         >
-          Review & Generate
+          Continue
         </Button>
       </div>
     </div>

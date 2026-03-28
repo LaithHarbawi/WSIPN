@@ -877,7 +877,7 @@ export default function RecommendationsPage() {
                   <Button
                     variant="secondary"
                     onClick={() => {
-                      useAppStore.getState().setOnboardingStep(2);
+                      useAppStore.getState().setOnboardingStep(1);
                       router.push("/onboarding");
                     }}
                     className="shadow-card"
