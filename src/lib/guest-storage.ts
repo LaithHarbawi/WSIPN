@@ -130,7 +130,20 @@ const defaultPreferences: CurrentPreferences = {
 };
 
 export function getCurrentPreferences(): CurrentPreferences {
-  return getItem(KEYS.preferences, defaultPreferences);
+  const stored = getItem(KEYS.preferences, defaultPreferences);
+  // Migrate old schema: platform (string) → platforms (array), remove scope, add globalComment
+  const migrated = { ...defaultPreferences, ...stored } as CurrentPreferences & { platform?: string; scope?: string };
+  if (!Array.isArray(migrated.platforms)) {
+    migrated.platforms = migrated.platform && migrated.platform !== "Any platform"
+      ? [migrated.platform]
+      : [];
+  }
+  if (typeof migrated.globalComment !== "string") {
+    migrated.globalComment = "";
+  }
+  delete migrated.platform;
+  delete migrated.scope;
+  return migrated;
 }
 
 export function saveCurrentPreferences(prefs: CurrentPreferences) {
