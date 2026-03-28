@@ -64,6 +64,7 @@ const defaultPreferences: CurrentPreferences = {
   era: "Any era",
   timeCommitment: "Varies / No preference",
   platform: "Any platform",
+  globalComment: "",
 };
 
 /** Sync a taste profile update to Supabase if the user is authenticated. */

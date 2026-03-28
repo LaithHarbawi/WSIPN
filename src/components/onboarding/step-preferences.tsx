@@ -13,6 +13,7 @@ import {
   CalendarDays,
   Clock,
   Monitor,
+  MessageSquare,
 } from "lucide-react";
 import {
   GENRE_OPTIONS,
@@ -280,6 +281,39 @@ export function StepPreferences() {
           onChange={(v) => updatePreference("platform", v)}
           index={8}
         />
+
+        {/* Divider */}
+        <div className="border-t border-border-subtle/60 mx-12" />
+
+        {/* Global Comment */}
+        <div
+          className="group space-y-4 opacity-0 animate-[fadeSlideIn_0.5s_ease-out_forwards]"
+          style={{ animationDelay: `${9 * 60}ms` }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full bg-accent-primary/10 border border-accent-primary/20 shadow-sm shadow-accent-primary/5">
+              <MessageSquare className="h-4 w-4 text-accent-primary" />
+            </div>
+            <div className="space-y-0.5 pt-1">
+              <h3 className="text-sm font-bold text-text-primary tracking-tight">
+                Anything else?
+              </h3>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Tell us anything — specific things you love or hate, deal-breakers,
+                a vibe you&apos;re chasing, or games you want &ldquo;more of&rdquo;. This directly shapes your results.
+              </p>
+            </div>
+          </div>
+          <div className="pl-12">
+            <textarea
+              value={preferences.globalComment}
+              onChange={(e) => updatePreference("globalComment", e.target.value)}
+              placeholder={'e.g. "I want something with a really good story that isn\'t too long. I loved the art style of Ori. No battle royales."'}
+              rows={3}
+              className="w-full rounded-xl bg-bg-tertiary/60 border border-border-subtle/60 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent-primary/30 focus:border-accent-primary/40 resize-none transition-all"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Premium navigation footer */}

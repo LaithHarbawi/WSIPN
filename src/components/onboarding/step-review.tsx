@@ -11,6 +11,7 @@ import {
   ThumbsDown,
   Sparkles,
   Edit3,
+  MessageSquare,
 } from "lucide-react";
 import type { GameSentiment, RecommendationSession } from "@/lib/types";
 
@@ -241,6 +242,30 @@ export function StepReview() {
           )}
         </div>
       </Card>
+
+      {/* Global Comment */}
+      {preferences.globalComment?.trim() && (
+        <Card variant="glass" padding="lg" className="shadow-elevated relative overflow-hidden">
+          <div className="flex items-center justify-between mb-4 relative">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-accent-primary" />
+              <h3 className="text-lg font-semibold text-text-primary">
+                Your Notes
+              </h3>
+            </div>
+            <button
+              onClick={() => setOnboardingStep(2)}
+              className="flex items-center gap-1.5 text-sm text-accent-primary hover:text-accent-primary/80 transition-colors font-medium"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          </div>
+          <p className="text-sm text-text-secondary leading-relaxed italic">
+            &ldquo;{preferences.globalComment.trim()}&rdquo;
+          </p>
+        </Card>
+      )}
 
       {/* CTA Section */}
       <div className="flex flex-col items-center gap-4 pt-2 pb-4">

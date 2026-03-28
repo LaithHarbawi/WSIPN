@@ -15,6 +15,7 @@ import {
   HelpCircle,
   ExternalLink,
   ShoppingCart,
+  Compass,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { generateStoreLinks, type StoreLink } from "@/lib/affiliate";
@@ -33,6 +34,12 @@ const TYPE_META: Record<
     icon: Sparkles,
     color: "text-accent-primary",
     bgColor: "bg-accent-primary/10",
+  },
+  discovery: {
+    label: "Hidden Gem",
+    icon: Compass,
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-400/10",
   },
   wildcard: {
     label: "Wildcard",

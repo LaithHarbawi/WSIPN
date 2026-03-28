@@ -51,12 +51,14 @@ export interface CurrentPreferences {
   era: string;
   timeCommitment: string;
   platform: string;
+  globalComment: string;
 }
 
 // ── Recommendations ──
 
 export type RecommendationType =
   | "primary"
+  | "discovery"
   | "wildcard"
   | "safe_pick"
   | "surprise";

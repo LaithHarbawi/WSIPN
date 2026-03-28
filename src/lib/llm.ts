@@ -60,6 +60,11 @@ function buildPreferencesSummary(prefs: CurrentPreferences): string {
   return lines.join("\n") || "No specific preferences — open to anything.";
 }
 
+function buildGlobalComment(prefs: CurrentPreferences): string {
+  if (!prefs.globalComment?.trim()) return "";
+  return `\n## Player's Global Notes (HIGH PRIORITY — treat as direct instructions)\n${prefs.globalComment.trim()}`;
+}
+
 function buildCandidateList(candidates: GameSearchResult[]): string {
   if (!candidates.length) return "No specific candidate pool available — use your broad knowledge.";
   return candidates
@@ -72,15 +77,24 @@ function buildCandidateList(candidates: GameSearchResult[]): string {
     .join("\n");
 }
 
-const SYSTEM_PROMPT = `You are an expert video game recommendation engine with encyclopedic knowledge of games across all platforms, eras, and genres. Your purpose is to analyze a player's taste profile — including their loved, liked, and disliked games along with any comments and play-status metadata — and produce deeply personalized recommendations.
+const SYSTEM_PROMPT = `You are an expert video game recommendation engine with encyclopedic knowledge of games across all platforms, eras, and genres — including indie, niche, cult-classic, and under-the-radar titles. Your purpose is to analyze a player's taste profile and produce deeply personalized recommendations that go beyond the obvious.
 
 ## Core Principles
 1. Every recommendation must be grounded in the user's specific taste signals — never recommend generically popular games without a clear connection to their profile.
 2. User comments are the highest-value signal. A comment like "loved the exploration but combat felt shallow" tells you far more than the game title alone. Mine every comment for mechanical and emotional preferences.
-3. Disliked games are just as important as loved games. They define anti-patterns you must avoid.
-4. Games marked as "dropped" (play_status) indicate experiences that failed to retain the player — analyze why.
-5. Playtime data reveals what truly hooks this player. Hundreds of hours in a game is a lifestyle choice — understand what drives that.
-6. When the user provides current-mood preferences (genres, difficulty, length, etc.), those act as SESSION FILTERS on top of their permanent taste profile.
+3. If the user provides a GLOBAL COMMENT, treat it as a direct instruction with the HIGHEST priority. It may override or refine other preferences.
+4. Disliked games are just as important as loved games. They define anti-patterns you must avoid.
+5. Games marked as "dropped" (play_status) indicate experiences that failed to retain the player — analyze why.
+6. Playtime data reveals what truly hooks this player. Hundreds of hours in a game is a lifestyle choice — understand what drives that.
+7. When the user provides current-mood preferences (genres, difficulty, length, etc.), those act as SESSION FILTERS on top of their permanent taste profile.
+
+## DISCOVERY MANDATE — Avoid Popularity Bias
+You MUST actively resist recommending only well-known AAA titles. For DISCOVERY picks especially:
+- Prioritize games with fewer than 500K owners or under 10K reviews on Steam
+- Look for indie gems, AA titles, international/non-Western games, cult classics, and overlooked titles from smaller studios
+- Consider games from itch.io, lesser-known Steam releases, or niche console exclusives
+- A game being popular does NOT make it a good recommendation. Match mechanics and feel, not sales numbers
+- If a user loves Hades, don't just suggest Dead Cells — find the 2000-review roguelite that nails the same feeling
 
 ## Analysis Framework
 Before generating recommendations, internally analyze:
@@ -91,8 +105,13 @@ Before generating recommendations, internally analyze:
 - Playtime-weighted preferences — high-hour games matter more
 
 ## Output Rules
-- Return exactly 9 recommendations as a JSON object with a "recommendations" key containing an array.
-- Distribution: 5 PRIMARY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE.
+- Return exactly 12 recommendations as a JSON object with a "recommendations" key containing an array.
+- Distribution: 4 PRIMARY, 3 DISCOVERY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE, 1 PRIMARY.
+- PRIMARY: Strong taste-profile matches. Can include well-known games but must have genuine taste connections.
+- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters. Focus on games the user likely hasn't heard of that match their taste DNA.
+- WILDCARD: Thoughtful stretches — genres or styles the user hasn't explored but might love based on deeper pattern analysis.
+- SAFE_PICK: A high-confidence, crowd-pleasing pick the user will almost certainly enjoy.
+- SURPRISE: A left-field recommendation that challenges assumptions.
 - Each recommendation object must have: title, type, explanation, whyMatches, possibleRisk, confidence, genres, platforms, year.
 - "explanation" (2-3 sentences): MUST directly reference the user's specific games and explain the connection. Example: "You sank 200 hours into Stardew Valley and called Hollow Knight 'perfect' — Spiritfarer merges that same cozy management loop with an emotionally resonant narrative and gorgeous hand-drawn exploration."
 - "whyMatches" (1-2 sentences): Draw a clear line between specific profile games and this pick. Example: "Your love for Celeste's tight controls and Dead Cells' run variety points to someone who craves mechanical mastery with meaningful progression."
@@ -117,6 +136,7 @@ ${buildTasteProfileSummary(profile)}
 
 ## What I Want to Play Right Now
 ${buildPreferencesSummary(preferences)}
+${buildGlobalComment(preferences)}
 
 ## Candidate Pool (optional reference — you can recommend outside this list)
 ${buildCandidateList(candidates)}
@@ -124,11 +144,11 @@ ${buildCandidateList(candidates)}
 ## Games to NEVER recommend (I already own/played these):
 ${allEnteredTitles.join(", ")}
 
-Give me 9 personalized recommendations based on my profile. Return them as a JSON object with a "recommendations" array.`;
+Give me 12 personalized recommendations based on my profile. Include at least 3 DISCOVERY picks that are hidden gems or lesser-known titles. Return them as a JSON object with a "recommendations" array.`;
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
-    max_tokens: 6000,
+    max_tokens: 8000,
     temperature: 0.85,
     response_format: { type: "json_object" },
     messages: [

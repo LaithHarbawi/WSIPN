@@ -22,6 +22,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   Play,
+  Compass,
 } from "lucide-react";
 import { WsipnLogo } from "@/components/ui/wsipn-logo";
 
@@ -49,6 +50,7 @@ export default function RecommendationsPage() {
   }));
 
   const primary = normalized.filter((r) => r.type === "primary");
+  const discovery = normalized.filter((r) => r.type === "discovery");
   const wildcards = normalized.filter((r) => r.type === "wildcard");
   const safePick = normalized.find((r) => r.type === "safe_pick");
   const surprise = normalized.find((r) => r.type === "surprise");
@@ -104,6 +106,7 @@ export default function RecommendationsPage() {
 
   const TYPE_BADGE: Record<string, { label: string; color: string; bg: string }> = {
     primary: { label: "Top Pick", color: "text-accent-primary", bg: "bg-accent-primary/15" },
+    discovery: { label: "Hidden Gem", color: "text-emerald-400", bg: "bg-emerald-400/15" },
     wildcard: { label: "Wildcard", color: "text-accent-warm", bg: "bg-accent-warm/15" },
     safe_pick: { label: "Safe Pick", color: "text-accent-success", bg: "bg-accent-success/15" },
     surprise: { label: "Surprise", color: "text-accent-secondary", bg: "bg-accent-secondary/15" },
@@ -339,6 +342,61 @@ export default function RecommendationsPage() {
                 </SectionRow>
               )}
 
+              {/* ── Discovery Row — Hidden Gems ── */}
+              {discovery.length > 0 && (
+                <SectionRow
+                  title="Hidden Gems"
+                  subtitle="Under-the-radar titles you probably haven't heard of"
+                  icon={<Compass className="h-5 w-5 text-emerald-400" />}
+                  scrollable
+                >
+                  {discovery.map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="flex-shrink-0 w-[280px] group cursor-pointer"
+                    >
+                      <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                        <div className="relative h-40 overflow-hidden">
+                          {(rec.screenshotUrl || rec.imageUrl) ? (
+                            <img
+                              src={rec.screenshotUrl || rec.imageUrl}
+                              alt={rec.title}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
+                              <Gamepad2 className="h-8 w-8 text-text-muted" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
+                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${TYPE_BADGE["discovery"].bg} ${TYPE_BADGE["discovery"].color} backdrop-blur-sm`}>
+                            <Compass className="h-2.5 w-2.5" />
+                            {TYPE_BADGE["discovery"].label}
+                          </span>
+                        </div>
+                        <div className="p-4 space-y-2">
+                          <h3 className="font-bold text-sm text-text-primary truncate">
+                            {rec.title}
+                          </h3>
+                          <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+                            {rec.explanation}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] text-text-muted pt-1">
+                            {rec.year && <span>{rec.year}</span>}
+                            {rec.genres?.length ? (
+                              <>
+                                <span className="opacity-40">·</span>
+                                <span>{rec.genres.slice(0, 2).join(", ")}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </SectionRow>
+              )}
+
               {/* ── Wildcard Picks Row ── */}
               {wildcards.length > 0 && (
                 <SectionRow
@@ -477,6 +535,15 @@ export default function RecommendationsPage() {
 
                 {/* Remaining primary */}
                 {remainingPrimary.map((rec) => (
+                  <RecommendationCard
+                    key={rec.id}
+                    recommendation={rec}
+                    onFeedback={(type) => handleFeedback(rec.id, type)}
+                  />
+                ))}
+
+                {/* Discovery */}
+                {discovery.map((rec) => (
                   <RecommendationCard
                     key={rec.id}
                     recommendation={rec}

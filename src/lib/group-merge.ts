@@ -144,6 +144,7 @@ function buildConsensusPreferences(participants: GroupParticipant[]): CurrentPre
     era: "Any era",
     timeCommitment: "Varies / No preference",
     platform: "Any platform",
+    globalComment: "",
   };
 
   function mostCommon(values: string[], defaultVal: string): string {

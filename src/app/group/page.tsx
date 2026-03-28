@@ -24,6 +24,7 @@ const defaultPreferences: CurrentPreferences = {
   era: "Any era",
   timeCommitment: "Varies / No preference",
   platform: "Any platform",
+  globalComment: "",
 };
 
 const emptyProfile: TasteProfile = { loved: [], liked: [], disliked: [] };
