@@ -52,6 +52,10 @@ export function StepReview() {
       : [];
 
     try {
+      // Include previously recommended games as exclusions to prevent repeats
+      const recHistory = guestStorage.getRecHistory();
+      const allNotInterested = guestStorage.getNotInterestedTitles();
+
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,29 +63,31 @@ export function StepReview() {
           tasteProfile,
           preferences,
           steamLibraryTitles,
-          notInterestedTitles: guestStorage.getNotInterestedTitles(),
+          notInterestedTitles: [...allNotInterested, ...recHistory],
         }),
       });
 
       if (!res.ok) throw new Error("Generation failed");
       const data = await res.json();
 
-      // Hard filter: strip any not-interested games the LLM returned anyway
-      const niList = guestStorage.getNotInterestedTitles();
+      // Hard filter: strip any not-interested or previously recommended games the LLM returned anyway
+      const excludeList = [...allNotInterested, ...recHistory];
       const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const niNorm = niList.map(normalize);
-      const filtered = niList.length > 0
+      const excludeNorm = excludeList.map(normalize);
+      const filtered = excludeList.length > 0
         ? (data.recommendations as Array<{ title: string }>).filter((r) => {
             const rNorm = normalize(r.title);
-            return !niNorm.some((ni) => {
-              if (ni === rNorm) return true;
-              const shorter = ni.length <= rNorm.length ? ni : rNorm;
-              const longer = ni.length > rNorm.length ? ni : rNorm;
+            return !excludeNorm.some((ex) => {
+              if (ex === rNorm) return true;
+              const shorter = ex.length <= rNorm.length ? ex : rNorm;
+              const longer = ex.length > rNorm.length ? ex : rNorm;
               return shorter.length >= 8 && longer.includes(shorter);
             });
           })
         : data.recommendations;
 
+      // Save recommended titles to persistent history
+      guestStorage.addToRecHistory(filtered.map((r: { title: string }) => r.title));
       setRecommendations(filtered);
     } catch (error) {
       console.error("Failed to generate recommendations:", error);

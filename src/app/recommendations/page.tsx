@@ -84,8 +84,9 @@ export default function RecommendationsPage() {
     setHydrated(true);
   }, [hydrate]);
 
-  // Track every recommendation title we've ever shown — persist to sessionStorage
+  // Track every recommendation title we've ever shown — persist to both sessionStorage and rec history
   useEffect(() => {
+    if (recommendations.length === 0) return;
     for (const r of recommendations) {
       previouslyShownRef.current.add(r.title);
     }
@@ -95,6 +96,8 @@ export default function RecommendationsPage() {
         JSON.stringify([...previouslyShownRef.current])
       );
     } catch { /* ignore */ }
+    // Also persist to long-term rec history (survives across sessions)
+    guestStorage.addToRecHistory(recommendations.map((r) => r.title));
   }, [recommendations]);
 
   const saveFeedbackMap = useCallback((map: Record<string, RecommendationFeedback>) => {
@@ -110,22 +113,7 @@ export default function RecommendationsPage() {
       .map((g) => g.name);
   }, []);
 
-  /** Hard client-side filter: strip any not-interested games the LLM returned anyway. */
-  const filterNotInterested = useCallback((recs: typeof recommendations) => {
-    const niList = guestStorage.getNotInterestedTitles();
-    if (niList.length === 0) return recs;
-    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const niNorm = niList.map(normalize);
-    return recs.filter((r) => {
-      const rNorm = normalize(r.title);
-      return !niNorm.some((ni) => {
-        if (ni === rNorm) return true;
-        const shorter = ni.length <= rNorm.length ? ni : rNorm;
-        const longer = ni.length > rNorm.length ? ni : rNorm;
-        return shorter.length >= 8 && longer.includes(shorter);
-      });
-    });
-  }, []);
+  // filterNotInterested is now handled by hardFilterExclusions below
 
   // Normalize types (LLM may return uppercase like "PRIMARY")
   const normalized = recommendations.map((r) => ({
@@ -143,13 +131,32 @@ export default function RecommendationsPage() {
   const heroRec = primary[0];
   const remainingPrimary = primary.slice(1);
 
-  /** Get all titles the user never wants to see (not interested + all previously shown). */
-  const getExcludedTitles = useCallback((): string[] => {
+  // getExcludedTitles is now handled by buildExclusionList below
+
+  /** Build full exclusion list: not-interested + rec history + session previously shown */
+  const buildExclusionList = useCallback((): string[] => {
     const ni = guestStorage.getNotInterestedTitles();
-    const currentTitles = recommendations.map((r) => r.title);
-    const allPrevious = [...previouslyShownRef.current];
-    return [...new Set([...ni, ...currentTitles, ...allPrevious])];
-  }, [recommendations]);
+    const history = guestStorage.getRecHistory();
+    const sessionPrev = [...previouslyShownRef.current];
+    return [...new Set([...ni, ...history, ...sessionPrev])];
+  }, []);
+
+  /** Hard client-side filter: remove any game in the exclusion list that the LLM returned anyway */
+  const hardFilterExclusions = useCallback((recs: typeof recommendations, extraExclusions: string[] = []) => {
+    const allExclude = [...buildExclusionList(), ...extraExclusions];
+    if (allExclude.length === 0) return recs;
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const exNorm = allExclude.map(normalize);
+    return recs.filter((r) => {
+      const rNorm = normalize(r.title);
+      return !exNorm.some((ex) => {
+        if (ex === rNorm) return true;
+        const shorter = ex.length <= rNorm.length ? ex : rNorm;
+        const longer = ex.length > rNorm.length ? ex : rNorm;
+        return shorter.length >= 8 && longer.includes(shorter);
+      });
+    });
+  }, [buildExclusionList]);
 
   const handleRefresh = async () => {
     // Cancel any in-flight generation request
@@ -160,42 +167,24 @@ export default function RecommendationsPage() {
     setIsGenerating(true);
     setError(null);
     try {
-      const excludedTitles = getExcludedTitles();
-      const augmentedPreferences = {
-        ...preferences,
-        globalComment: [
-          preferences.globalComment,
-          excludedTitles.length > 0
-            ? `Do NOT recommend any of these games (already shown or not interested): ${excludedTitles.join(", ")}. Give me completely different recommendations.`
-            : "",
-        ].filter(Boolean).join("\n\n"),
-      };
+      const allExclusions = buildExclusionList();
 
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tasteProfile,
-          preferences: augmentedPreferences,
+          preferences,
           steamLibraryTitles: getSteamExclusions(),
-          notInterestedTitles: guestStorage.getNotInterestedTitles(),
+          notInterestedTitles: allExclusions,
         }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      // Hard filter: remove not-interested + all previously shown games
-      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const prevNorm = [...previouslyShownRef.current].map(normalize);
-      const cleaned = filterNotInterested(data.recommendations).filter((r: { title: string }) => {
-        const rNorm = normalize(r.title);
-        return !prevNorm.some((p) => {
-          if (p === rNorm) return true;
-          const shorter = p.length <= rNorm.length ? p : rNorm;
-          const longer = p.length > rNorm.length ? p : rNorm;
-          return shorter.length >= 8 && longer.includes(shorter);
-        });
-      });
+      const cleaned = hardFilterExclusions(data.recommendations);
+      // Save to persistent history
+      guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title));
       setRecommendations(cleaned);
       saveFeedbackMap({}); // Reset feedback for new recs
     } catch (e) {
@@ -260,12 +249,12 @@ export default function RecommendationsPage() {
       setIsGenerating(true);
       setError(null);
       try {
-        const excludedTitles = getExcludedTitles();
+        const allExclusions = buildExclusionList();
         const augmentedPreferences = {
           ...preferences,
           globalComment: [
             preferences.globalComment,
-            `IMPORTANT: Give me more games like "${sourceRec.title}". Match its specific mechanics, feel, and what makes it special. Do NOT recommend "${sourceRec.title}" itself or any of these games: ${excludedTitles.join(", ")}.`,
+            `IMPORTANT: Give me more games like "${sourceRec.title}". Match its specific mechanics, feel, and what makes it special. Do NOT recommend "${sourceRec.title}" itself.`,
           ].filter(Boolean).join("\n\n"),
         };
 
@@ -276,28 +265,16 @@ export default function RecommendationsPage() {
             tasteProfile,
             preferences: augmentedPreferences,
             steamLibraryTitles: getSteamExclusions(),
-            notInterestedTitles: guestStorage.getNotInterestedTitles(),
+            notInterestedTitles: allExclusions,
           }),
           signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
-        // Hard filter: remove the source game + not-interested + all previously shown
-        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const sourceNorm = normalize(sourceRec.title);
-        const prevNorm = [...previouslyShownRef.current].map(normalize);
-        const cleaned = filterNotInterested(data.recommendations).filter((r: { title: string }) => {
-          const rNorm = normalize(r.title);
-          const fuzzyMatch = (a: string, b: string) => {
-            if (a === b) return true;
-            const shorter = a.length <= b.length ? a : b;
-            const longer = a.length > b.length ? a : b;
-            return shorter.length >= 8 && longer.includes(shorter);
-          };
-          if (fuzzyMatch(rNorm, sourceNorm)) return false;
-          if (prevNorm.some((p) => fuzzyMatch(p, rNorm))) return false;
-          return true;
-        });
+        // Hard filter: remove source game + all exclusions
+        const cleaned = hardFilterExclusions(data.recommendations, [sourceRec.title]);
+        // Save to persistent history
+        guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title));
         setRecommendations(cleaned);
         saveFeedbackMap({}); // Reset feedback for new recs
       } catch (e) {

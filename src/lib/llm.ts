@@ -127,7 +127,7 @@ Before generating recommendations, internally analyze:
 - Return exactly 12 recommendations as a JSON object with a "recommendations" key containing an array.
 - Distribution: 4 PRIMARY, 4 DISCOVERY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE.
 - PRIMARY: Strong taste-profile matches. Can include known games but ONLY with genuine, specific taste connections grounded in the user's comments and games.
-- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters. Dig deep — recommend games most players haven't heard of.
+- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters or well-known indie hits. If a game has over 50K Steam reviews, it is NOT a discovery pick. Dig deep — recommend games most players haven't heard of. Games like RimWorld, Deep Rock Galactic, Valheim, Terraria, etc. are NOT hidden gems.
 - WILDCARD: Thoughtful stretches — genres or styles the user hasn't explored but might love based on deeper pattern analysis.
 - SAFE_PICK: A high-confidence pick the user will almost certainly enjoy. Even this must be justified by their specific profile, not just general popularity.
 - SURPRISE: A left-field recommendation that challenges assumptions.
@@ -169,7 +169,7 @@ Give me 12 personalized recommendations based SOLELY on my taste profile and pre
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 8000,
-    temperature: 0.95,
+    temperature: 0.9,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },

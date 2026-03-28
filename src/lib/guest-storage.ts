@@ -16,6 +16,7 @@ const KEYS = {
   recommendations: "wsipn_recommendations",
   steamProfile: "wsipn_steam_profile",
   notInterested: "wsipn_not_interested",
+  recHistory: "wsipn_rec_history",
 } as const;
 
 const MIGRATION_KEY = "wsipn_migration_v2_done";
@@ -274,6 +275,29 @@ export function removeNotInterested(title: string) {
   setItem(KEYS.notInterested, list);
 }
 
+// ── Recommendation History (persistent across sessions — prevents repeats) ──
+
+const MAX_REC_HISTORY = 200;
+
+export function getRecHistory(): string[] {
+  return getItem(KEYS.recHistory, []);
+}
+
+export function addToRecHistory(titles: string[]) {
+  const existing = getRecHistory();
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const existingNorm = new Set(existing.map(normalize));
+  const newTitles = titles.filter((t) => !existingNorm.has(normalize(t)));
+  if (newTitles.length === 0) return;
+  const updated = [...existing, ...newTitles].slice(-MAX_REC_HISTORY);
+  setItem(KEYS.recHistory, updated);
+}
+
+export function clearRecHistory() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(KEYS.recHistory);
+}
+
 // ── Migration: Move all guest data for Supabase upload ──
 
 export function exportGuestData() {
@@ -289,4 +313,5 @@ export function clearGuestData() {
   Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
   // Clean up keys managed outside the KEYS map
   localStorage.removeItem("wsipn_rec_feedback");
+  localStorage.removeItem("wsipn_previously_shown");
 }
