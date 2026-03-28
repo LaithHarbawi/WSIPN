@@ -39,16 +39,24 @@ export interface TasteProfile {
   disliked: GameEntry[];
 }
 
+// ── Derived union types from option arrays ──
+
+export type Difficulty = (typeof DIFFICULTY_OPTIONS)[number];
+export type GameLength = (typeof GAME_LENGTH_OPTIONS)[number];
+export type PlayerMode = (typeof PLAYER_MODE_OPTIONS)[number];
+export type Era = (typeof ERA_OPTIONS)[number];
+export type TimeCommitment = (typeof TIME_COMMITMENT_OPTIONS)[number];
+
 // ── Current Preferences ──
 
 export interface CurrentPreferences {
   genres: string[];
   moods: string[];
-  difficulty: string;
-  gameLength: string;
-  playerMode: string;
-  era: string;
-  timeCommitment: string;
+  difficulty: Difficulty;
+  gameLength: GameLength;
+  playerMode: PlayerMode;
+  era: Era;
+  timeCommitment: TimeCommitment;
   platforms: string[];
   globalComment: string;
 }

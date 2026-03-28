@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { WsipnLogo } from "@/components/ui/wsipn-logo";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -48,6 +48,22 @@ export default function GroupPage() {
   const [recommendations, setRecommendations] = useState<GroupRecommendation[]>([]);
   const [merged, setMerged] = useState<MergedGroupTaste | null>(null);
   const [error, setError] = useState("");
+
+  // Warn before navigating away if participants have data
+  useEffect(() => {
+    const hasData = participants.some(
+      (p) =>
+        p.tasteProfile.loved.length > 0 ||
+        p.tasteProfile.liked.length > 0 ||
+        p.tasteProfile.disliked.length > 0
+    );
+    if (!hasData) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [participants]);
 
   const handleGoToSummary = () => {
     const m = mergeGroupTaste(participants);

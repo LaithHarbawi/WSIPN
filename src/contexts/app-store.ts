@@ -79,6 +79,13 @@ function syncPreferences(prefs: CurrentPreferences) {
   if (userId) remote.savePreferencesRemote(userId, prefs);
 }
 
+/**
+ * Version counter that increments on every user-initiated state mutation.
+ * Used to detect whether the user changed state while a Supabase fetch
+ * was in flight, so we can avoid overwriting their changes with stale data.
+ */
+let _stateVersion = 0;
+
 export const useAppStore = create<AppState>((set, get) => ({
   userMode: "guest",
   userId: null,
@@ -86,6 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   onboardingStep: 0,
   setOnboardingStep: (step) => {
+    _stateVersion++;
     set({ onboardingStep: step });
     guest.saveOnboardingStep(step);
     const { userId } = get();
@@ -94,12 +102,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   tasteProfile: { loved: [], liked: [], disliked: [] },
   addGame: (entry) => {
+    _stateVersion++;
     const profile = { ...get().tasteProfile };
     profile[entry.sentiment] = [...profile[entry.sentiment], entry];
     set({ tasteProfile: profile });
     syncTasteProfile(profile);
   },
   removeGame: (id) => {
+    _stateVersion++;
     const profile = { ...get().tasteProfile };
     for (const key of Object.keys(profile) as GameSentiment[]) {
       profile[key] = profile[key].filter((g) => g.id !== id);
@@ -108,26 +118,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     syncTasteProfile(profile);
   },
   updateGame: (id, updates) => {
+    _stateVersion++;
     const profile = { ...get().tasteProfile };
-    for (const key of Object.keys(profile) as GameSentiment[]) {
-      profile[key] = profile[key].map((g) =>
-        g.id === id ? { ...g, ...updates } : g
-      );
+
+    if (updates.sentiment) {
+      // Sentiment change — move entry to the correct category
+      let entry: GameEntry | undefined;
+      for (const key of Object.keys(profile) as GameSentiment[]) {
+        const found = profile[key].find((g) => g.id === id);
+        if (found) {
+          entry = found;
+          profile[key] = profile[key].filter((g) => g.id !== id);
+          break;
+        }
+      }
+      if (entry) {
+        profile[updates.sentiment] = [
+          ...(profile[updates.sentiment] ?? []),
+          { ...entry, ...updates },
+        ];
+      }
+    } else {
+      for (const key of Object.keys(profile) as GameSentiment[]) {
+        profile[key] = profile[key].map((g) =>
+          g.id === id ? { ...g, ...updates } : g
+        );
+      }
     }
+
     set({ tasteProfile: profile });
     syncTasteProfile(profile);
   },
   setTasteProfile: (profile) => {
+    _stateVersion++;
     set({ tasteProfile: profile });
     syncTasteProfile(profile);
   },
 
   preferences: defaultPreferences,
   setPreferences: (prefs) => {
+    _stateVersion++;
     set({ preferences: prefs });
     syncPreferences(prefs);
   },
   updatePreference: (key, value) => {
+    _stateVersion++;
     const prefs = { ...get().preferences, [key]: value };
     set({ preferences: prefs });
     syncPreferences(prefs);
@@ -135,6 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   recommendations: [],
   setRecommendations: (recs) => {
+    _stateVersion++;
     set({ recommendations: recs });
     guest.saveRecommendations(recs);
     const { userId } = get();
@@ -145,6 +181,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sessions: [],
   addSession: (session) => {
+    _stateVersion++;
     const sessions = [session, ...get().sessions];
     set({ sessions });
     guest.saveSession(session);
@@ -172,6 +209,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 2. If authenticated, fetch from Supabase in background and merge
     const { userId } = get();
     if (userId) {
+      // Snapshot the version before the async fetch so we can detect
+      // whether the user mutated state while the request was in flight.
+      const versionAtHydrate = _stateVersion;
+
       remote.fetchUserData(userId).then((remoteData) => {
         if (!remoteData) {
           // No remote data yet — push local data to Supabase
@@ -198,19 +239,34 @@ export const useAppStore = create<AppState>((set, get) => ({
           profile.loved.length + profile.liked.length + profile.disliked.length > 0;
 
         if (remoteHasGames) {
-          // Remote has data — it's the source of truth
           const remotePrefs = remoteData.preferences as CurrentPreferences ?? defaultPreferences;
           const remoteRecs = (remoteData.recommendations ?? []) as Recommendation[];
           const remoteSessions = (remoteData.sessions ?? []) as RecommendationSession[];
           const remoteStep = remoteData.onboarding_step ?? 0;
 
-          set({
-            tasteProfile: remoteProfile,
-            preferences: remotePrefs,
-            recommendations: remoteRecs,
-            sessions: remoteSessions,
-            onboardingStep: remoteStep as OnboardingStep,
-          });
+          if (_stateVersion === versionAtHydrate) {
+            // No user changes since hydration started — safe to apply remote data directly
+            set({
+              tasteProfile: remoteProfile,
+              preferences: remotePrefs,
+              recommendations: remoteRecs,
+              sessions: remoteSessions,
+              onboardingStep: remoteStep as OnboardingStep,
+            });
+          } else {
+            // User made changes while Supabase was loading — merge carefully.
+            // Prefer current (local) state for fields the user likely touched,
+            // but pull in remote data for fields that still match the pre-hydrate snapshot.
+            const current = get();
+
+            set({
+              tasteProfile: current.tasteProfile === profile ? remoteProfile : current.tasteProfile,
+              preferences: current.preferences === prefs ? remotePrefs : current.preferences,
+              recommendations: current.recommendations === recs ? remoteRecs : current.recommendations,
+              sessions: current.sessions === sessions ? remoteSessions : current.sessions,
+              onboardingStep: current.onboardingStep === step ? remoteStep as OnboardingStep : current.onboardingStep,
+            });
+          }
 
           // Sync remote → localStorage for offline/fast access
           guest.saveTasteProfile(remoteProfile);

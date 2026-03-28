@@ -39,6 +39,8 @@ export default function RecommendationsPage() {
     hydrate,
   } = useAppStore();
 
+  // Whether initial hydration from localStorage has completed
+  const [hydrated, setHydrated] = useState(false);
   // Feedback state: { recId: feedbackType }
   const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
   // Titles the user marked "not interested" — persisted across sessions
@@ -79,6 +81,7 @@ export default function RecommendationsPage() {
         titles.forEach((t) => previouslyShownRef.current.add(t));
       }
     } catch { /* ignore */ }
+    setHydrated(true);
   }, [hydrate]);
 
   // Track every recommendation title we've ever shown — persist to sessionStorage
@@ -374,7 +377,7 @@ export default function RecommendationsPage() {
 
       {/* ── Content ── */}
       <main className="relative z-10 flex-1 pb-32">
-        {isGenerating ? (
+        {(isGenerating || !hydrated) ? (
           <div className="max-w-5xl mx-auto px-6">
             <RecommendationSkeleton />
           </div>
@@ -519,6 +522,11 @@ export default function RecommendationsPage() {
                   <Sparkles className="h-3.5 w-3.5" />
                   {recommendations.length} games curated for you
                 </div>
+                {recommendations.length < 8 && recommendations.length > 0 && (
+                  <p className="text-xs text-text-muted">
+                    Some recommendations were filtered out during verification. Hit &quot;Let&apos;s try again&quot; for more picks.
+                  </p>
+                )}
               </div>
 
               {/* ── Top Picks Row ── */}

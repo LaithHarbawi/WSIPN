@@ -1,4 +1,4 @@
-import type { TasteProfile, GameEntry, CurrentPreferences } from "./types";
+import type { TasteProfile, GameEntry, CurrentPreferences, Difficulty, GameLength, PlayerMode, Era, TimeCommitment } from "./types";
 
 // ── Group Types ──
 
@@ -146,10 +146,10 @@ function buildConsensusPreferences(participants: GroupParticipant[]): CurrentPre
     globalComment: "",
   };
 
-  function mostCommon(values: string[], defaultVal: string): string {
+  function mostCommon<T extends string>(values: T[], defaultVal: T): T {
     const filtered = values.filter((v) => v !== defaultVal);
     if (filtered.length === 0) return defaultVal;
-    const counts = new Map<string, number>();
+    const counts = new Map<T, number>();
     for (const v of filtered) {
       counts.set(v, (counts.get(v) ?? 0) + 1);
     }
@@ -158,11 +158,11 @@ function buildConsensusPreferences(participants: GroupParticipant[]): CurrentPre
 
   return {
     ...defaults,
-    difficulty: mostCommon(participants.map((p) => p.preferences.difficulty), "No preference"),
-    gameLength: mostCommon(participants.map((p) => p.preferences.gameLength), "No preference"),
-    playerMode: mostCommon(participants.map((p) => p.preferences.playerMode), "Any"),
-    era: mostCommon(participants.map((p) => p.preferences.era), "Any era"),
-    timeCommitment: mostCommon(participants.map((p) => p.preferences.timeCommitment), "Varies / No preference"),
+    difficulty: mostCommon<Difficulty>(participants.map((p) => p.preferences.difficulty), "No preference"),
+    gameLength: mostCommon<GameLength>(participants.map((p) => p.preferences.gameLength), "No preference"),
+    playerMode: mostCommon<PlayerMode>(participants.map((p) => p.preferences.playerMode), "Any"),
+    era: mostCommon<Era>(participants.map((p) => p.preferences.era), "Any era"),
+    timeCommitment: mostCommon<TimeCommitment>(participants.map((p) => p.preferences.timeCommitment), "Varies / No preference"),
     platforms: [...new Set(participants.flatMap((p) => p.preferences.platforms))],
   };
 }

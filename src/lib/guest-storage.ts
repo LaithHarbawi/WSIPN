@@ -108,10 +108,28 @@ export function removeGameEntry(id: string) {
 
 export function updateGameEntry(id: string, updates: Partial<GameEntry>) {
   const profile = getTasteProfile();
-  for (const key of Object.keys(profile) as GameSentiment[]) {
-    profile[key] = profile[key].map((g) =>
-      g.id === id ? { ...g, ...updates } : g
-    );
+
+  // If sentiment is changing, move the entry to the correct category
+  if (updates.sentiment) {
+    let entry: GameEntry | undefined;
+    for (const key of Object.keys(profile) as GameSentiment[]) {
+      const found = profile[key].find((g) => g.id === id);
+      if (found) {
+        entry = found;
+        profile[key] = profile[key].filter((g) => g.id !== id);
+        break;
+      }
+    }
+    if (entry) {
+      profile[updates.sentiment].push({ ...entry, ...updates });
+    }
+  } else {
+    // No sentiment change — update in place
+    for (const key of Object.keys(profile) as GameSentiment[]) {
+      profile[key] = profile[key].map((g) =>
+        g.id === id ? { ...g, ...updates } : g
+      );
+    }
   }
   saveTasteProfile(profile);
 }

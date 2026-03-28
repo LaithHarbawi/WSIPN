@@ -86,17 +86,17 @@ function MultiSelect({
   );
 }
 
-interface SingleSelectProps {
+interface SingleSelectProps<T extends string> {
   label: string;
   description?: string;
   icon: typeof Sparkles;
-  options: readonly string[];
-  selected: string;
-  onChange: (value: string) => void;
+  options: readonly T[];
+  selected: T;
+  onChange: (value: T) => void;
   index: number;
 }
 
-function SingleSelect({
+function SingleSelect<T extends string>({
   label,
   description,
   icon: Icon,
@@ -104,7 +104,7 @@ function SingleSelect({
   selected,
   onChange,
   index,
-}: SingleSelectProps) {
+}: SingleSelectProps<T>) {
   return (
     <div
       className="group space-y-4 opacity-0 animate-[fadeSlideIn_0.5s_ease-out_forwards]"
