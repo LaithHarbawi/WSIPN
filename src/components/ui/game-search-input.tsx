@@ -21,8 +21,10 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
   const [results, setResults] = useState<GameSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const highlightedRef = useRef<HTMLButtonElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -64,11 +66,21 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
     if (query.length >= 2) {
       setIsSearching(true); // Show spinner immediately
     }
-    debounceTimer.current = setTimeout(() => search(query), 150);
+    debounceTimer.current = setTimeout(() => search(query), 300);
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
   }, [query, search]);
+
+  // Reset highlighted index when results change
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [results]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    highlightedRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlightedIndex]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -108,12 +120,35 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
     }
   };
 
+  // Total selectable items: search results + manual entry (if query is non-empty)
+  const totalItems = results.length + (query.trim() ? 1 : 0);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Escape") {
       e.preventDefault();
-      if (results.length > 0) {
-        selectGame(results[0]);
-      } else if (query.trim()) {
+      setIsOpen(false);
+      return;
+    }
+
+    if (!isOpen || totalItems === 0) {
+      if (e.key === "Enter" && query.trim()) {
+        e.preventDefault();
+        addManualEntry();
+      }
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev + 1) % totalItems);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev - 1 + totalItems) % totalItems);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedIndex < results.length) {
+        selectGame(results[highlightedIndex]);
+      } else {
         addManualEntry();
       }
     }
@@ -146,11 +181,17 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
           ref={dropdownRef}
           className="absolute z-50 w-full mt-1.5 rounded-2xl bg-bg-secondary border border-border-subtle shadow-elevated overflow-hidden max-h-80 overflow-y-auto scrollbar-hide"
         >
-          {results.map((game) => (
+          {results.map((game, index) => (
             <button
               key={game.id}
+              ref={index === highlightedIndex ? highlightedRef : undefined}
               onClick={() => selectGame(game)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-bg-tertiary/80 transition-colors duration-150 text-left"
+              onMouseEnter={() => setHighlightedIndex(index)}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 text-left ${
+                index === highlightedIndex
+                  ? "bg-bg-tertiary/80"
+                  : "hover:bg-bg-tertiary/80"
+              }`}
             >
               {game.background_image ? (
                 <img
@@ -178,8 +219,14 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
           {/* Manual entry option */}
           {query.trim() && (
             <button
+              ref={highlightedIndex === results.length ? highlightedRef : undefined}
               onClick={addManualEntry}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-bg-tertiary/80 transition-colors duration-150 text-left border-t border-border-subtle/60"
+              onMouseEnter={() => setHighlightedIndex(results.length)}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 text-left border-t border-border-subtle/60 ${
+                highlightedIndex === results.length
+                  ? "bg-bg-tertiary/80"
+                  : "hover:bg-bg-tertiary/80"
+              }`}
             >
               <div className="w-11 h-11 rounded-lg bg-accent-primary/8 flex items-center justify-center flex-shrink-0">
                 <Plus className="h-4.5 w-4.5 text-accent-primary" />

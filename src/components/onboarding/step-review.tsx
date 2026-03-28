@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,7 +36,10 @@ export function StepReview() {
     setRecommendations,
   } = useAppStore();
 
+  const [genError, setGenError] = useState<string | null>(null);
+
   const generateRecs = async () => {
+    setGenError(null);
     setIsGenerating(true);
     router.push("/recommendations");
 
@@ -69,13 +73,19 @@ export function StepReview() {
       const filtered = niList.length > 0
         ? (data.recommendations as Array<{ title: string }>).filter((r) => {
             const rNorm = normalize(r.title);
-            return !niNorm.some((ni) => ni === rNorm || ni.includes(rNorm) || rNorm.includes(ni));
+            return !niNorm.some((ni) => {
+              if (ni === rNorm) return true;
+              const shorter = ni.length <= rNorm.length ? ni : rNorm;
+              const longer = ni.length > rNorm.length ? ni : rNorm;
+              return shorter.length >= 8 && longer.includes(shorter);
+            });
           })
         : data.recommendations;
 
       setRecommendations(filtered);
     } catch (error) {
       console.error("Failed to generate recommendations:", error);
+      setGenError("Failed to generate recommendations. Please try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -282,6 +292,11 @@ export function StepReview() {
 
       {/* CTA Section */}
       <div className="flex flex-col items-center gap-4 pt-2 pb-4">
+        {genError && (
+          <div className="w-full max-w-md px-4 py-3 rounded-xl bg-accent-danger/10 border border-accent-danger/20 text-accent-danger text-sm text-center">
+            {genError}
+          </div>
+        )}
         <Button
           size="xl"
           onClick={generateRecs}

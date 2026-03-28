@@ -20,6 +20,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const totalGames =
+      (tasteProfile.loved?.length ?? 0) +
+      (tasteProfile.liked?.length ?? 0) +
+      (tasteProfile.disliked?.length ?? 0);
+    if (totalGames === 0) {
+      return NextResponse.json(
+        { error: "Add at least one game to your taste profile first." },
+        { status: 400 }
+      );
+    }
+
     // Gather broad candidate pool from IGDB for context
     const hasIgdb =
       process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET;

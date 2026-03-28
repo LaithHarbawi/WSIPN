@@ -101,7 +101,8 @@ export async function getPopularGames(
   const offset = (page - 1) * 40;
   let genreFilter = "";
   if (genres) {
-    genreFilter = `where genres.name = ("${genres}");`;
+    const sanitized = genres.replace(/["\\]/g, "");
+    genreFilter = `where genres.name = ("${sanitized}");`;
   }
 
   try {

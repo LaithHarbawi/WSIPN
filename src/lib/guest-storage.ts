@@ -157,10 +157,12 @@ export function getSessions(): RecommendationSession[] {
   return getItem(KEYS.sessions, []);
 }
 
+const MAX_SESSIONS = 50;
+
 export function saveSession(session: RecommendationSession) {
   const sessions = getSessions();
   sessions.unshift(session);
-  setItem(KEYS.sessions, sessions);
+  setItem(KEYS.sessions, sessions.slice(0, MAX_SESSIONS));
 }
 
 // ── Recommendations ──

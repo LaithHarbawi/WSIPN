@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   Play,
   Compass,
+  Undo2,
 } from "lucide-react";
 import { WsipnLogo } from "@/components/ui/wsipn-logo";
 
@@ -44,7 +45,11 @@ export default function RecommendationsPage() {
   const [notInterestedTitles, setNotInterestedTitles] = useState<string[]>([]);
   // Error state for failed generation
   const [error, setError] = useState<string | null>(null);
-  // Cumulative set of all titles shown across retries (survives re-renders, not state)
+  // Undo toast for "not interested"
+  const [undoToast, setUndoToast] = useState<{ recId: string; rec: typeof recommendations[0] } | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Cumulative set of all titles shown across retries — persisted to sessionStorage
+  // so it survives navigation to /onboarding and back
   const previouslyShownRef = useRef<Set<string>>(new Set());
   // Abort controller to cancel stale generation requests and prevent race conditions
   const abortRef = useRef<AbortController | null>(null);
@@ -52,18 +57,41 @@ export default function RecommendationsPage() {
   useEffect(() => {
     hydrate();
     setNotInterestedTitles(guestStorage.getNotInterestedTitles());
-    // Restore saved feedback from localStorage
+    // Restore saved feedback from localStorage — only if IDs match current recs
     try {
       const saved = localStorage.getItem("wsipn_rec_feedback");
-      if (saved) setFeedbackMap(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved) as Record<string, string>;
+        const currentIds = new Set(useAppStore.getState().recommendations.map((r) => r.id));
+        // Only keep feedback entries that match current recommendation IDs
+        const relevant: Record<string, string> = {};
+        for (const [id, fb] of Object.entries(parsed)) {
+          if (currentIds.has(id)) relevant[id] = fb;
+        }
+        if (Object.keys(relevant).length > 0) setFeedbackMap(relevant as Record<string, RecommendationFeedback>);
+      }
+    } catch { /* ignore */ }
+    // Restore previously shown titles from sessionStorage
+    try {
+      const prev = sessionStorage.getItem("wsipn_previously_shown");
+      if (prev) {
+        const titles: string[] = JSON.parse(prev);
+        titles.forEach((t) => previouslyShownRef.current.add(t));
+      }
     } catch { /* ignore */ }
   }, [hydrate]);
 
-  // Track every recommendation title we've ever shown in this page session
+  // Track every recommendation title we've ever shown — persist to sessionStorage
   useEffect(() => {
     for (const r of recommendations) {
       previouslyShownRef.current.add(r.title);
     }
+    try {
+      sessionStorage.setItem(
+        "wsipn_previously_shown",
+        JSON.stringify([...previouslyShownRef.current])
+      );
+    } catch { /* ignore */ }
   }, [recommendations]);
 
   const saveFeedbackMap = useCallback((map: Record<string, RecommendationFeedback>) => {
@@ -209,6 +237,10 @@ export default function RecommendationsPage() {
         // Immediately remove from current recommendations
         const filtered = recommendations.filter((r) => r.id !== recId);
         setRecommendations(filtered);
+        // Show undo toast
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        setUndoToast({ recId, rec });
+        undoTimerRef.current = setTimeout(() => setUndoToast(null), 6000);
       }
       return; // Don't proceed to more_like_this check
     }
@@ -273,6 +305,23 @@ export default function RecommendationsPage() {
       }
     }
   };
+
+  const handleUndoNotInterested = useCallback(() => {
+    if (!undoToast) return;
+    // Remove from not-interested list
+    guestStorage.removeNotInterested(undoToast.rec.title);
+    setNotInterestedTitles(guestStorage.getNotInterestedTitles());
+    // Restore to current recommendations
+    setRecommendations([...recommendations, undoToast.rec]);
+    // Clear toast
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoToast(null);
+  }, [undoToast, recommendations, setRecommendations]);
+
+  const scrollToDetail = useCallback((recId: string) => {
+    const el = document.getElementById(`detail-${recId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   const hasResults = recommendations.length > 0;
 
@@ -484,6 +533,7 @@ export default function RecommendationsPage() {
                     <div
                       key={rec.id}
                       className="flex-shrink-0 w-[280px] group cursor-pointer"
+                      onClick={() => scrollToDetail(rec.id)}
                     >
                       <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                         {/* Card image */}
@@ -541,6 +591,7 @@ export default function RecommendationsPage() {
                     <div
                       key={rec.id}
                       className="flex-shrink-0 w-[280px] group cursor-pointer"
+                      onClick={() => scrollToDetail(rec.id)}
                     >
                       <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                         <div className="relative h-40 overflow-hidden">
@@ -596,6 +647,7 @@ export default function RecommendationsPage() {
                     <div
                       key={rec.id}
                       className="flex-shrink-0 w-[280px] group cursor-pointer"
+                      onClick={() => scrollToDetail(rec.id)}
                     >
                       <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                         <div className="relative h-40 overflow-hidden">
@@ -655,6 +707,7 @@ export default function RecommendationsPage() {
                       <div
                         key={rec.id}
                         className="flex-shrink-0 w-[280px] group cursor-pointer"
+                        onClick={() => scrollToDetail(rec.id)}
                       >
                         <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                           <div className="relative h-40 overflow-hidden">
@@ -712,58 +765,84 @@ export default function RecommendationsPage() {
 
                 {/* Hero rec full card */}
                 {heroRec && (
-                  <RecommendationCard
-                    key={heroRec.id}
-                    recommendation={heroRec}
-                    featured
-                    activeFeedback={feedbackMap[heroRec.id] ?? null}
-                    onFeedback={(type) => handleFeedback(heroRec.id, type)}
-                  />
+                  <div id={`detail-${heroRec.id}`}>
+                    <RecommendationCard
+                      key={heroRec.id}
+                      recommendation={heroRec}
+                      featured
+                      activeFeedback={feedbackMap[heroRec.id] ?? null}
+                      onFeedback={(type) => handleFeedback(heroRec.id, type)}
+                    />
+                  </div>
                 )}
 
                 {/* Remaining primary */}
                 {remainingPrimary.map((rec) => (
-                  <RecommendationCard
-                    key={rec.id}
-                    recommendation={rec}
-                    activeFeedback={feedbackMap[rec.id] ?? null}
-                    onFeedback={(type) => handleFeedback(rec.id, type)}
-                  />
+                  <div key={rec.id} id={`detail-${rec.id}`}>
+                    <RecommendationCard
+                      recommendation={rec}
+                      activeFeedback={feedbackMap[rec.id] ?? null}
+                      onFeedback={(type) => handleFeedback(rec.id, type)}
+                    />
+                  </div>
                 ))}
 
                 {/* Discovery */}
                 {discovery.map((rec) => (
-                  <RecommendationCard
-                    key={rec.id}
-                    recommendation={rec}
-                    activeFeedback={feedbackMap[rec.id] ?? null}
-                    onFeedback={(type) => handleFeedback(rec.id, type)}
-                  />
+                  <div key={rec.id} id={`detail-${rec.id}`}>
+                    <RecommendationCard
+                      recommendation={rec}
+                      activeFeedback={feedbackMap[rec.id] ?? null}
+                      onFeedback={(type) => handleFeedback(rec.id, type)}
+                    />
+                  </div>
                 ))}
 
                 {/* Wildcards */}
                 {wildcards.map((rec) => (
-                  <RecommendationCard
-                    key={rec.id}
-                    recommendation={rec}
-                    activeFeedback={feedbackMap[rec.id] ?? null}
-                    onFeedback={(type) => handleFeedback(rec.id, type)}
-                  />
+                  <div key={rec.id} id={`detail-${rec.id}`}>
+                    <RecommendationCard
+                      recommendation={rec}
+                      activeFeedback={feedbackMap[rec.id] ?? null}
+                      onFeedback={(type) => handleFeedback(rec.id, type)}
+                    />
+                  </div>
                 ))}
 
                 {/* Special picks */}
                 {specialPicks.map((rec) =>
                   rec ? (
-                    <RecommendationCard
-                      key={rec.id}
-                      recommendation={rec}
-                      activeFeedback={feedbackMap[rec.id] ?? null}
-                      onFeedback={(type) => handleFeedback(rec.id, type)}
-                    />
+                    <div key={rec.id} id={`detail-${rec.id}`}>
+                      <RecommendationCard
+                        recommendation={rec}
+                        activeFeedback={feedbackMap[rec.id] ?? null}
+                        onFeedback={(type) => handleFeedback(rec.id, type)}
+                      />
+                    </div>
                   ) : null
                 )}
               </div>
             </div>
+
+            {/* ═══════════════════════════════════════════
+                UNDO TOAST — not interested
+                ═══════════════════════════════════════════ */}
+            {undoToast && (
+              <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-bg-secondary border border-border-subtle shadow-elevated backdrop-blur-xl">
+                  <span className="text-sm text-text-secondary">
+                    Removed <span className="font-medium text-text-primary">{undoToast.rec.title}</span>
+                  </span>
+                  <button
+                    onClick={handleUndoNotInterested}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-accent-primary hover:bg-accent-primary/10 transition-colors"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                    Undo
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* ═══════════════════════════════════════════
                 ACTION BAR — sticky bottom
