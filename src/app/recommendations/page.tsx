@@ -75,6 +75,18 @@ export default function RecommendationsPage() {
       .map((g) => g.name);
   }, []);
 
+  /** Hard client-side filter: strip any not-interested games the LLM returned anyway. */
+  const filterNotInterested = useCallback((recs: typeof recommendations) => {
+    const niList = guestStorage.getNotInterestedTitles();
+    if (niList.length === 0) return recs;
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const niNorm = niList.map(normalize);
+    return recs.filter((r) => {
+      const rNorm = normalize(r.title);
+      return !niNorm.some((ni) => ni === rNorm || ni.includes(rNorm) || rNorm.includes(ni));
+    });
+  }, []);
+
   // Normalize types (LLM may return uppercase like "PRIMARY")
   const normalized = recommendations.map((r) => ({
     ...r,
@@ -125,7 +137,7 @@ export default function RecommendationsPage() {
       });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      setRecommendations(data.recommendations);
+      setRecommendations(filterNotInterested(data.recommendations));
       saveFeedbackMap({}); // Reset feedback for new recs
     } catch {
       // Keep current recommendations on error
@@ -199,7 +211,7 @@ export default function RecommendationsPage() {
         });
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
-        setRecommendations(data.recommendations);
+        setRecommendations(filterNotInterested(data.recommendations));
         saveFeedbackMap({}); // Reset feedback for new recs
       } catch {
         // Keep current on error

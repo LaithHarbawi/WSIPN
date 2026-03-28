@@ -62,7 +62,18 @@ export function StepReview() {
       if (!res.ok) throw new Error("Generation failed");
       const data = await res.json();
 
-      setRecommendations(data.recommendations);
+      // Hard filter: strip any not-interested games the LLM returned anyway
+      const niList = guestStorage.getNotInterestedTitles();
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const niNorm = niList.map(normalize);
+      const filtered = niList.length > 0
+        ? (data.recommendations as Array<{ title: string }>).filter((r) => {
+            const rNorm = normalize(r.title);
+            return !niNorm.some((ni) => ni === rNorm || ni.includes(rNorm) || rNorm.includes(ni));
+          })
+        : data.recommendations;
+
+      setRecommendations(filtered);
     } catch (error) {
       console.error("Failed to generate recommendations:", error);
     } finally {

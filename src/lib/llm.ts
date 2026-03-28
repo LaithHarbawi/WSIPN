@@ -210,11 +210,19 @@ Give me 12 personalized recommendations based on my profile. Include at least 3 
   }
 
   // Defensive: filter out duplicates and titles already in user's profile
+  // Use normalized fuzzy matching to catch LLM title variations like "The Outer Wilds" vs "Outer Wilds"
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const excludedNormalized = allExcludedTitles.map(normalize);
   const seen = new Set<string>();
   const filtered = raw.filter((r) => {
     const key = r.title.toLowerCase();
-    if (seen.has(key) || allExcludedTitles.includes(key)) return false;
-    seen.add(key);
+    const keyNorm = normalize(r.title);
+    if (seen.has(keyNorm)) return false;
+    // Check exact match or fuzzy substring match against exclusion list
+    const isExcluded = allExcludedTitles.includes(key)
+      || excludedNormalized.some((ex) => ex === keyNorm || ex.includes(keyNorm) || keyNorm.includes(ex));
+    if (isExcluded) return false;
+    seen.add(keyNorm);
     return true;
   });
 
