@@ -123,10 +123,9 @@ const defaultPreferences: CurrentPreferences = {
   difficulty: "No preference",
   gameLength: "No preference",
   playerMode: "Any",
-  scope: "Any",
   era: "Any era",
   timeCommitment: "Varies / No preference",
-  platform: "Any platform",
+  platforms: [],
   globalComment: "",
 };
 

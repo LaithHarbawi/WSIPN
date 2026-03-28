@@ -6,9 +6,10 @@ import type { TasteProfile, CurrentPreferences, GameSearchResult } from "@/lib/t
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tasteProfile, preferences } = body as {
+    const { tasteProfile, preferences, steamLibraryTitles } = body as {
       tasteProfile: TasteProfile;
       preferences: CurrentPreferences;
+      steamLibraryTitles?: string[];
     };
 
     if (!tasteProfile) {
@@ -38,7 +39,8 @@ export async function POST(request: NextRequest) {
     const recommendations = await generateRecommendations(
       tasteProfile,
       preferences,
-      candidates
+      candidates,
+      steamLibraryTitles
     );
 
     // Enrich with cover images from IGDB

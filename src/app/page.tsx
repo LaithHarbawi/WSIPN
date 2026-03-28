@@ -153,7 +153,7 @@ export default function LandingPage() {
               {user ? (
                 <>
                   {user.name ? (
-                    <>Hey, <span className="text-gradient">{user.name}</span></>
+                    <>Hey,{" "}<span className="text-gradient">{user.name}</span></>
                   ) : (
                     <>Ready to <span className="text-gradient">play</span>?</>
                   )}
@@ -373,14 +373,14 @@ export default function LandingPage() {
                 <span className="text-accent-primary text-xs font-bold uppercase tracking-widest">Step 3</span>
                 <h3 className="text-2xl font-bold mt-2 tracking-tight">Discover, don&apos;t scroll</h3>
                 <p className="text-text-secondary mt-3 leading-relaxed">
-                  Get 9 personalized picks — each with a detailed explanation of exactly
+                  Get 12 personalized picks — each with a detailed explanation of exactly
                   <em> why</em> it matches your taste. Not generic bestseller lists.
                   Real connections to the games you already love.
                 </p>
                 <p className="text-sm text-text-muted mt-3 italic">
-                  &ldquo;You sank 200 hours into Stardew Valley and called Hollow Knight
-                  &lsquo;perfect&rsquo; — Spiritfarer merges that same cozy loop
-                  with an emotionally resonant narrative.&rdquo;
+                  &ldquo;Your love for Hollow Knight&apos;s tight controls and
+                  Dead Cells&apos; run variety points to someone who craves mechanical
+                  mastery with meaningful progression.&rdquo;
                 </p>
               </div>
               {/* Visual: recommendation preview */}
@@ -395,16 +395,16 @@ export default function LandingPage() {
                     <div className="absolute inset-0 bg-gradient-to-t from-bg-card/95 via-bg-card/30 to-transparent" />
                     <div className="absolute bottom-3 left-4 right-4">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-accent-primary">Top Pick</span>
-                      <h4 className="text-base font-bold text-white mt-0.5">Spiritfarer</h4>
+                      <h4 className="text-base font-bold text-white mt-0.5">Outer Wilds</h4>
                     </div>
                   </div>
                   <div className="p-4 space-y-2">
                     <p className="text-xs text-text-secondary leading-relaxed">
-                      A cozy management game about dying — sounds contradictory,
-                      but the emotional depth matches what you loved in Hollow Knight&apos;s world.
+                      A mystery wrapped in a solar system — the same curiosity-driven
+                      exploration loop that made Hollow Knight&apos;s map so rewarding.
                     </p>
                     <div className="flex gap-1.5 flex-wrap">
-                      {["Adventure", "Management", "Indie"].map((g) => (
+                      {["Adventure", "Exploration", "Indie"].map((g) => (
                         <span key={g} className="text-[10px] px-2 py-0.5 rounded-md bg-bg-tertiary text-text-muted">
                           {g}
                         </span>

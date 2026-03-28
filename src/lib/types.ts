@@ -47,10 +47,9 @@ export interface CurrentPreferences {
   difficulty: string;
   gameLength: string;
   playerMode: string;
-  scope: string;
   era: string;
   timeCommitment: string;
-  platform: string;
+  platforms: string[];
   globalComment: string;
 }
 
@@ -171,13 +170,7 @@ export const PLAYER_MODE_OPTIONS = [
   "Single-player",
   "Multiplayer",
   "Co-op",
-  "Any",
-] as const;
-
-export const SCOPE_OPTIONS = [
-  "Indie",
-  "AA",
-  "AAA",
+  "Friendslop",
   "Any",
 ] as const;
 
@@ -205,5 +198,4 @@ export const PLATFORM_OPTIONS = [
   "Nintendo Switch",
   "Steam Deck",
   "Mobile",
-  "Any platform",
 ] as const;

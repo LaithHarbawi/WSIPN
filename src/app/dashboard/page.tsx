@@ -16,11 +16,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Bookmark,
-  Clock,
   Plus,
   Trash2,
   Sparkles,
-  ArrowRight,
   Settings,
   AlertTriangle,
   ChevronDown,
@@ -33,7 +31,6 @@ export default function DashboardPage() {
   const router = useRouter();
   const {
     tasteProfile,
-    sessions,
     addGame,
     removeGame,
     updateGame,
@@ -41,7 +38,7 @@ export default function DashboardPage() {
     resetAll,
   } = useAppStore();
   const [savedGames, setSavedGames] = useState<guestStorage.SavedGame[]>([]);
-  const [activeTab, setActiveTab] = useState<"profile" | "saved" | "history">(
+  const [activeTab, setActiveTab] = useState<"profile" | "saved">(
     "profile"
   );
   const [addingTo, setAddingTo] = useState<GameSentiment | null>(null);
@@ -135,13 +132,11 @@ export default function DashboardPage() {
   const tabs = [
     { key: "profile" as const, label: "Taste Profile" },
     { key: "saved" as const, label: "Play Later" },
-    { key: "history" as const, label: "History" },
   ];
 
   const stats = [
     { label: "Games Rated", value: totalGames, icon: Gamepad2 },
     { label: "Saved to Play", value: savedGames.length, icon: Bookmark },
-    { label: "Sessions", value: sessions.length, icon: Clock },
     { label: "Loved", value: tasteProfile.loved.length, icon: Heart },
   ];
 
@@ -372,82 +367,6 @@ export default function DashboardPage() {
                   <p className="text-text-secondary font-medium">No saved games yet</p>
                   <p className="text-text-muted text-sm mt-1">
                     Save games from your recommendations to play later.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* History Tab */}
-        {activeTab === "history" && (
-          <div className="space-y-3">
-            {sessions.length > 0 ? (
-              sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="glass rounded-2xl border border-border-subtle shadow-card hover:border-border-medium hover:shadow-elevated transition-all duration-300 p-5"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold">
-                        {new Date(session.createdAt).toLocaleDateString(
-                          "en-US",
-                          {
-                            month: "long",
-                            day: "numeric",
-                            year: "numeric",
-                          }
-                        )}
-                        <span className="text-text-muted font-normal ml-2">
-                          {new Date(session.createdAt).toLocaleTimeString(
-                            "en-US",
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            }
-                          )}
-                        </span>
-                      </p>
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-xs font-medium text-accent-primary bg-accent-primary/10 px-2 py-0.5 rounded-md">
-                          {session.recommendations.length} recs
-                        </span>
-                        {session.preferences.genres.length > 0 &&
-                          session.preferences.genres.slice(0, 3).map((genre) => (
-                            <span
-                              key={genre}
-                              className="text-[10px] font-medium uppercase tracking-wider text-text-muted bg-bg-tertiary px-2 py-0.5 rounded-md"
-                            >
-                              {genre}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        useAppStore.getState().setRecommendations(session.recommendations);
-                        router.push("/recommendations");
-                      }}
-                      className="flex-shrink-0"
-                    >
-                      View
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="glass rounded-2xl border border-border-subtle shadow-card text-center py-16 space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-accent-primary/10 flex items-center justify-center mx-auto">
-                  <Clock className="h-6 w-6 text-accent-primary" />
-                </div>
-                <div>
-                  <p className="text-text-secondary font-medium">No sessions yet</p>
-                  <p className="text-text-muted text-sm mt-1">
-                    Start a recommendation session to see your history here.
                   </p>
                 </div>
               </div>

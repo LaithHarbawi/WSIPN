@@ -84,22 +84,22 @@ export function StepFilters({
         </div>
       </div>
 
-      {/* Platform */}
+      {/* Platforms */}
       <div className="space-y-3">
-        <p className="text-sm font-semibold text-text-primary">Platform</p>
+        <p className="text-sm font-semibold text-text-primary">Platforms</p>
         <div className="flex flex-wrap gap-2">
           {PLATFORM_OPTIONS.map((platform) => (
             <Chip
               key={platform}
               label={platform}
-              selected={filters.platform === platform}
-              onToggle={() =>
-                setFilters({
-                  ...filters,
-                  platform:
-                    filters.platform === platform ? "Any platform" : platform,
-                })
-              }
+              selected={filters.platforms?.includes(platform) ?? false}
+              onToggle={() => {
+                const current = filters.platforms ?? [];
+                const updated = current.includes(platform)
+                  ? current.filter((p) => p !== platform)
+                  : [...current, platform];
+                setFilters({ ...filters, platforms: updated });
+              }}
               size="sm"
             />
           ))}

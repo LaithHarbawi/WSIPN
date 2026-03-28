@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { useAppStore } from "@/contexts/app-store";
+import * as guestStorage from "@/lib/guest-storage";
 import {
   Heart,
   ThumbsUp,
@@ -13,7 +14,7 @@ import {
   Edit3,
   MessageSquare,
 } from "lucide-react";
-import type { GameSentiment, RecommendationSession } from "@/lib/types";
+import type { GameSentiment } from "@/lib/types";
 
 const sentimentMeta: Record<
   GameSentiment,
@@ -32,33 +33,31 @@ export function StepReview() {
     setOnboardingStep,
     setIsGenerating,
     setRecommendations,
-    addSession,
   } = useAppStore();
 
   const generateRecs = async () => {
     setIsGenerating(true);
     router.push("/recommendations");
 
+    // Get Steam library games with 5+ hours to exclude from recommendations
+    const steamProfile = guestStorage.getSteamProfile();
+    const steamLibraryTitles = steamProfile
+      ? steamProfile.games
+          .filter((g) => g.playtimeHours >= 5)
+          .map((g) => g.name)
+      : [];
+
     try {
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasteProfile, preferences }),
+        body: JSON.stringify({ tasteProfile, preferences, steamLibraryTitles }),
       });
 
       if (!res.ok) throw new Error("Generation failed");
       const data = await res.json();
 
       setRecommendations(data.recommendations);
-
-      // Save session
-      const session: RecommendationSession = {
-        id: `session-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        preferences,
-        recommendations: data.recommendations,
-      };
-      addSession(session);
     } catch (error) {
       console.error("Failed to generate recommendations:", error);
     } finally {
@@ -77,17 +76,15 @@ export function StepReview() {
     { label: "Difficulty", value: preferences.difficulty },
     { label: "Length", value: preferences.gameLength },
     { label: "Player Mode", value: preferences.playerMode },
-    { label: "Scope", value: preferences.scope },
     { label: "Era", value: preferences.era },
     { label: "Session Time", value: preferences.timeCommitment },
-    { label: "Platform", value: preferences.platform },
+    { label: "Platforms", value: preferences.platforms?.length ? preferences.platforms.join(", ") : "" },
   ].filter(
     (p) =>
       p.value &&
       p.value !== "No preference" &&
       p.value !== "Any" &&
       p.value !== "Any era" &&
-      p.value !== "Any platform" &&
       p.value !== "Varies / No preference"
   );
 

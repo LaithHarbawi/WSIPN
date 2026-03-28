@@ -155,7 +155,7 @@ export function GameCard({ entry, onUpdate, onRemove, startExpanded }: GameCardP
                   className="w-full px-3 py-2 rounded-xl bg-bg-input border border-border-subtle text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/30 transition-all duration-200 appearance-none"
                 >
                   <option value="">Not specified</option>
-                  {PLATFORM_OPTIONS.filter((p) => p !== "Any platform").map(
+                  {PLATFORM_OPTIONS.map(
                     (p) => (
                       <option key={p} value={p}>
                         {p}

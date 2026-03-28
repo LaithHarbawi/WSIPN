@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SectionRow } from "@/components/ui/section-row";
@@ -9,7 +9,7 @@ import { RecommendationSkeleton } from "@/components/ui/loading-skeleton";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/contexts/app-store";
 import * as guestStorage from "@/lib/guest-storage";
-import type { RecommendationFeedback, RecommendationSession } from "@/lib/types";
+import type { RecommendationFeedback } from "@/lib/types";
 import {
   Gamepad2,
   ArrowLeft,
@@ -35,13 +35,33 @@ export default function RecommendationsPage() {
     preferences,
     setIsGenerating,
     setRecommendations,
-    addSession,
     hydrate,
   } = useAppStore();
 
+  // Feedback state: { recId: feedbackType }
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
+
   useEffect(() => {
     hydrate();
+    // Restore saved feedback from localStorage
+    try {
+      const saved = localStorage.getItem("wsipn_rec_feedback");
+      if (saved) setFeedbackMap(JSON.parse(saved));
+    } catch { /* ignore */ }
   }, [hydrate]);
+
+  const saveFeedbackMap = useCallback((map: Record<string, RecommendationFeedback>) => {
+    setFeedbackMap(map);
+    try { localStorage.setItem("wsipn_rec_feedback", JSON.stringify(map)); } catch { /* ignore */ }
+  }, []);
+
+  const getSteamExclusions = useCallback((): string[] => {
+    const steamProfile = guestStorage.getSteamProfile();
+    if (!steamProfile) return [];
+    return steamProfile.games
+      .filter((g) => g.playtimeHours >= 5)
+      .map((g) => g.name);
+  }, []);
 
   // Normalize types (LLM may return uppercase like "PRIMARY")
   const normalized = recommendations.map((r) => ({
@@ -62,22 +82,31 @@ export default function RecommendationsPage() {
   const handleRefresh = async () => {
     setIsGenerating(true);
     try {
+      // Pass current rec titles so LLM avoids them
+      const alreadyShownTitles = recommendations.map((r) => r.title);
+      const augmentedPreferences = {
+        ...preferences,
+        globalComment: [
+          preferences.globalComment,
+          alreadyShownTitles.length > 0
+            ? `Do NOT recommend any of these games that were already shown: ${alreadyShownTitles.join(", ")}. Give me completely different recommendations.`
+            : "",
+        ].filter(Boolean).join("\n\n"),
+      };
+
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasteProfile, preferences }),
+        body: JSON.stringify({
+          tasteProfile,
+          preferences: augmentedPreferences,
+          steamLibraryTitles: getSteamExclusions(),
+        }),
       });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setRecommendations(data.recommendations);
-
-      const session: RecommendationSession = {
-        id: `session-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        preferences,
-        recommendations: data.recommendations,
-      };
-      addSession(session);
+      saveFeedbackMap({}); // Reset feedback for new recs
     } catch {
       // Keep current recommendations on error
     } finally {
@@ -85,10 +114,19 @@ export default function RecommendationsPage() {
     }
   };
 
-  const handleFeedback = (
+  const handleFeedback = async (
     recId: string,
     type: RecommendationFeedback
   ) => {
+    // Toggle feedback — clicking same action again clears it
+    const updated = { ...feedbackMap };
+    if (updated[recId] === type) {
+      delete updated[recId];
+    } else {
+      updated[recId] = type;
+    }
+    saveFeedbackMap(updated);
+
     if (type === "save") {
       const rec = recommendations.find((r) => r.id === recId);
       if (rec) {
@@ -98,6 +136,43 @@ export default function RecommendationsPage() {
           genres: rec.genres,
           savedAt: new Date().toISOString(),
         });
+      }
+    }
+
+    if (type === "more_like_this") {
+      const sourceRec = recommendations.find((r) => r.id === recId);
+      if (!sourceRec) return;
+
+      setIsGenerating(true);
+      try {
+        // Add the source game to the global comment so LLM knows what to riff on,
+        // and pass existing rec titles to avoid duplicates
+        const existingTitles = recommendations.map((r) => r.title);
+        const augmentedPreferences = {
+          ...preferences,
+          globalComment: [
+            preferences.globalComment,
+            `IMPORTANT: Give me more games like "${sourceRec.title}". Match its specific mechanics, feel, and what makes it special. Do NOT recommend "${sourceRec.title}" itself or any of these already-recommended games: ${existingTitles.join(", ")}.`,
+          ].filter(Boolean).join("\n\n"),
+        };
+
+        const res = await fetch("/api/recommendations/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tasteProfile,
+            preferences: augmentedPreferences,
+            steamLibraryTitles: getSteamExclusions(),
+          }),
+        });
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+        setRecommendations(data.recommendations);
+        saveFeedbackMap({}); // Reset feedback for new recs
+      } catch {
+        // Keep current on error
+      } finally {
+        setIsGenerating(false);
       }
     }
   };
@@ -346,7 +421,7 @@ export default function RecommendationsPage() {
               {discovery.length > 0 && (
                 <SectionRow
                   title="Hidden Gems"
-                  subtitle="Under-the-radar titles you probably haven't heard of"
+                  subtitle="Under the radar titles"
                   icon={<Compass className="h-5 w-5 text-emerald-400" />}
                   scrollable
                 >
@@ -519,7 +594,7 @@ export default function RecommendationsPage() {
                 <div className="space-y-1">
                   <h2 className="text-xl font-bold tracking-tight">All Recommendations</h2>
                   <p className="text-sm text-text-muted">
-                    Detailed view with explanations, risks, and actions
+                    Detailed view with explanations and actions
                   </p>
                 </div>
 
@@ -529,6 +604,7 @@ export default function RecommendationsPage() {
                     key={heroRec.id}
                     recommendation={heroRec}
                     featured
+                    activeFeedback={feedbackMap[heroRec.id] ?? null}
                     onFeedback={(type) => handleFeedback(heroRec.id, type)}
                   />
                 )}
@@ -538,6 +614,7 @@ export default function RecommendationsPage() {
                   <RecommendationCard
                     key={rec.id}
                     recommendation={rec}
+                    activeFeedback={feedbackMap[rec.id] ?? null}
                     onFeedback={(type) => handleFeedback(rec.id, type)}
                   />
                 ))}
@@ -547,6 +624,7 @@ export default function RecommendationsPage() {
                   <RecommendationCard
                     key={rec.id}
                     recommendation={rec}
+                    activeFeedback={feedbackMap[rec.id] ?? null}
                     onFeedback={(type) => handleFeedback(rec.id, type)}
                   />
                 ))}
@@ -556,6 +634,7 @@ export default function RecommendationsPage() {
                   <RecommendationCard
                     key={rec.id}
                     recommendation={rec}
+                    activeFeedback={feedbackMap[rec.id] ?? null}
                     onFeedback={(type) => handleFeedback(rec.id, type)}
                   />
                 ))}
@@ -566,6 +645,7 @@ export default function RecommendationsPage() {
                     <RecommendationCard
                       key={rec.id}
                       recommendation={rec}
+                      activeFeedback={feedbackMap[rec.id] ?? null}
                       onFeedback={(type) => handleFeedback(rec.id, type)}
                     />
                   ) : null
@@ -577,30 +657,31 @@ export default function RecommendationsPage() {
                 ACTION BAR — sticky bottom
                 ═══════════════════════════════════════════ */}
             <div className="fixed bottom-0 left-0 right-0 z-30">
-              <div className="glass border-t border-border-subtle/50 shadow-elevated">
-                <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-center gap-3">
+              <div className="bg-bg-primary/95 backdrop-blur-xl border-t border-accent-primary/20 shadow-[0_-4px_30px_rgba(0,0,0,0.4)]">
+                <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-center gap-3">
                   <Button
-                    variant="secondary"
                     onClick={handleRefresh}
                     loading={isGenerating}
-                    className="glow-md"
+                    className="glow-md shadow-elevated px-6"
                   >
                     <RefreshCw className="h-4 w-4" />
-                    Try Different Angle
+                    Let&apos;s try again
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     onClick={() => router.push("/onboarding")}
+                    className="shadow-card"
                   >
                     <Edit3 className="h-4 w-4" />
                     Edit Taste Profile
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     onClick={() => {
                       useAppStore.getState().setOnboardingStep(2);
                       router.push("/onboarding");
                     }}
+                    className="shadow-card"
                   >
                     Edit Preferences
                   </Button>

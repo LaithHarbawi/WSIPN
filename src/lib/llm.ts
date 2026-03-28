@@ -51,12 +51,17 @@ function buildPreferencesSummary(prefs: CurrentPreferences): string {
   if (prefs.moods.length) lines.push(`Mood/Vibe: ${prefs.moods.join(", ")}`);
   if (prefs.difficulty !== "No preference") lines.push(`Difficulty: ${prefs.difficulty}`);
   if (prefs.gameLength !== "No preference") lines.push(`Length: ${prefs.gameLength}`);
-  if (prefs.playerMode !== "Any") lines.push(`Player Mode: ${prefs.playerMode}`);
-  if (prefs.scope !== "Any") lines.push(`Scope: ${prefs.scope}`);
+  if (prefs.playerMode !== "Any") {
+    if (prefs.playerMode === "Friendslop") {
+      lines.push(`Player Mode: Party / Social games — think Jackbox, Lethal Company, Among Us, Mario Party style games that groups of friends play together`);
+    } else {
+      lines.push(`Player Mode: ${prefs.playerMode}`);
+    }
+  }
   if (prefs.era !== "Any era") lines.push(`Era: ${prefs.era}`);
   if (prefs.timeCommitment !== "Varies / No preference")
     lines.push(`Session Length: ${prefs.timeCommitment}`);
-  if (prefs.platform !== "Any platform") lines.push(`Platform: ${prefs.platform}`);
+  if (prefs.platforms?.length) lines.push(`Platforms: ${prefs.platforms.join(", ")}`);
   return lines.join("\n") || "No specific preferences — open to anything.";
 }
 
@@ -77,24 +82,31 @@ function buildCandidateList(candidates: GameSearchResult[]): string {
     .join("\n");
 }
 
-const SYSTEM_PROMPT = `You are an expert video game recommendation engine with encyclopedic knowledge of games across all platforms, eras, and genres — including indie, niche, cult-classic, and under-the-radar titles. Your purpose is to analyze a player's taste profile and produce deeply personalized recommendations that go beyond the obvious.
+const SYSTEM_PROMPT = `You are an expert video game recommendation engine with encyclopedic knowledge of games across all platforms, eras, and genres — including indie, niche, cult-classic, and under-the-radar titles.
 
-## Core Principles
-1. Every recommendation must be grounded in the user's specific taste signals — never recommend generically popular games without a clear connection to their profile.
-2. User comments are the highest-value signal. A comment like "loved the exploration but combat felt shallow" tells you far more than the game title alone. Mine every comment for mechanical and emotional preferences.
-3. If the user provides a GLOBAL COMMENT, treat it as a direct instruction with the HIGHEST priority. It may override or refine other preferences.
-4. Disliked games are just as important as loved games. They define anti-patterns you must avoid.
-5. Games marked as "dropped" (play_status) indicate experiences that failed to retain the player — analyze why.
-6. Playtime data reveals what truly hooks this player. Hundreds of hours in a game is a lifestyle choice — understand what drives that.
-7. When the user provides current-mood preferences (genres, difficulty, length, etc.), those act as SESSION FILTERS on top of their permanent taste profile.
+## Priority Hierarchy (follow this order strictly)
+1. **GLOBAL COMMENT / PLAYER NOTES** — If the user writes free-form notes, these are the #1 signal. They override and refine everything else. Base your recommendations primarily on what the player explicitly asks for.
+2. **User comments on individual games** — A comment like "loved the exploration but combat felt shallow" is the next highest signal. Mine every comment for specific mechanical and emotional preferences.
+3. **Disliked/dropped games** — These define hard anti-patterns you must avoid.
+4. **Loved games + playtime data** — High-hour games reveal lifestyle preferences.
+5. **Liked games** — Secondary positive signal.
+6. **Session preferences** (genres, mood, difficulty, etc.) — Act as filters on top of taste.
+
+## ACCURACY RULES — No Fabricated Connections
+This is critical. You MUST only make comparisons between games that share CONCRETE, VERIFIABLE mechanical or structural similarities:
+- GOOD: "Like Hollow Knight, this is a 2D metroidvania with tight combat and interconnected map exploration."
+- BAD: "Like Outer Wilds' depth combined with Disco Elysium's narrative..." — these games share almost nothing mechanically.
+- NEVER compare games that only share vague qualities like "depth", "atmosphere", or "quality."
+- Every comparison must be grounded in SPECIFIC shared mechanics, structure, or design philosophy.
+- If you can't articulate a concrete mechanical connection, don't make the comparison.
+- Reference the user's actual comments when possible — if they said "loved the platforming", connect to platforming specifically.
 
 ## DISCOVERY MANDATE — Avoid Popularity Bias
 You MUST actively resist recommending only well-known AAA titles. For DISCOVERY picks especially:
 - Prioritize games with fewer than 500K owners or under 10K reviews on Steam
 - Look for indie gems, AA titles, international/non-Western games, cult classics, and overlooked titles from smaller studios
-- Consider games from itch.io, lesser-known Steam releases, or niche console exclusives
 - A game being popular does NOT make it a good recommendation. Match mechanics and feel, not sales numbers
-- If a user loves Hades, don't just suggest Dead Cells — find the 2000-review roguelite that nails the same feeling
+- If a user loves Hades, don't just suggest Dead Cells — find the lesser-known roguelite that nails the same feeling
 
 ## Analysis Framework
 Before generating recommendations, internally analyze:
@@ -106,30 +118,35 @@ Before generating recommendations, internally analyze:
 
 ## Output Rules
 - Return exactly 12 recommendations as a JSON object with a "recommendations" key containing an array.
-- Distribution: 4 PRIMARY, 3 DISCOVERY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE, 1 PRIMARY.
+- Distribution: 5 PRIMARY, 3 DISCOVERY, 2 WILDCARD, 1 SAFE_PICK, 1 SURPRISE.
 - PRIMARY: Strong taste-profile matches. Can include well-known games but must have genuine taste connections.
-- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters. Focus on games the user likely hasn't heard of that match their taste DNA.
+- DISCOVERY: Hidden gems, indie darlings, cult classics, or under-appreciated titles. These MUST NOT be mainstream/AAA blockbusters.
 - WILDCARD: Thoughtful stretches — genres or styles the user hasn't explored but might love based on deeper pattern analysis.
 - SAFE_PICK: A high-confidence, crowd-pleasing pick the user will almost certainly enjoy.
 - SURPRISE: A left-field recommendation that challenges assumptions.
 - Each recommendation object must have: title, type, explanation, whyMatches, possibleRisk, confidence, genres, platforms, year.
-- "explanation" (2-3 sentences): MUST directly reference the user's specific games and explain the connection. Example: "You sank 200 hours into Stardew Valley and called Hollow Knight 'perfect' — Spiritfarer merges that same cozy management loop with an emotionally resonant narrative and gorgeous hand-drawn exploration."
-- "whyMatches" (1-2 sentences): Draw a clear line between specific profile games and this pick. Example: "Your love for Celeste's tight controls and Dead Cells' run variety points to someone who craves mechanical mastery with meaningful progression."
-- "possibleRisk" (1 sentence): Ground the risk in their profile. Example: "You dropped Pillars of Eternity citing 'too much reading' — this game's first hour is dialogue-heavy, but it opens into pure exploration quickly."
+- "explanation" (2-3 sentences): Reference SPECIFIC mechanics, systems, or design elements from the user's games. Never make vague thematic comparisons.
+- "whyMatches" (1-2 sentences): Cite concrete shared mechanics or structure between user's games and this recommendation.
+- "possibleRisk" (1 sentence): Ground in their specific dislikes or drops if applicable. Otherwise note a genuine potential friction point.
 - "confidence": "High" | "Medium" | "Likely"
-- Never recommend a game the user has already entered.
+- Never recommend a game the user has already entered or that appears in their Steam library.
 - Return ONLY valid JSON — no markdown, no commentary outside the JSON object.`;
 
 export async function generateRecommendations(
   profile: TasteProfile,
   preferences: CurrentPreferences,
-  candidates: GameSearchResult[]
+  candidates: GameSearchResult[],
+  steamLibraryTitles?: string[]
 ): Promise<Recommendation[]> {
   const allEnteredTitles = [
     ...profile.loved,
     ...profile.liked,
     ...profile.disliked,
   ].map((g) => g.title.toLowerCase());
+
+  // Merge steam library titles (5+ hours) into exclusion list
+  const steamExclusions = (steamLibraryTitles ?? []).map((t) => t.toLowerCase());
+  const allExcludedTitles = [...new Set([...allEnteredTitles, ...steamExclusions])];
 
   const userMessage = `## My Taste Profile
 ${buildTasteProfileSummary(profile)}
@@ -142,7 +159,7 @@ ${buildGlobalComment(preferences)}
 ${buildCandidateList(candidates)}
 
 ## Games to NEVER recommend (I already own/played these):
-${allEnteredTitles.join(", ")}
+${allExcludedTitles.join(", ")}
 
 Give me 12 personalized recommendations based on my profile. Include at least 3 DISCOVERY picks that are hidden gems or lesser-known titles. Return them as a JSON object with a "recommendations" array.`;
 
@@ -193,7 +210,7 @@ Give me 12 personalized recommendations based on my profile. Include at least 3 
   const seen = new Set<string>();
   const filtered = raw.filter((r) => {
     const key = r.title.toLowerCase();
-    if (seen.has(key) || allEnteredTitles.includes(key)) return false;
+    if (seen.has(key) || allExcludedTitles.includes(key)) return false;
     seen.add(key);
     return true;
   });
@@ -347,8 +364,8 @@ export async function generateGroupRecommendations(
     if (filterPreferences.genres?.length) lines.push(`Genres: ${filterPreferences.genres.join(", ")}`);
     if (filterPreferences.playerMode && filterPreferences.playerMode !== "Any")
       lines.push(`Player Mode: ${filterPreferences.playerMode}`);
-    if (filterPreferences.platform && filterPreferences.platform !== "Any platform")
-      lines.push(`Platform: ${filterPreferences.platform}`);
+    if (filterPreferences.platforms?.length)
+      lines.push(`Platforms: ${filterPreferences.platforms.join(", ")}`);
     if (lines.length) filterSection = `\n## Session Filters\n${lines.join("\n")}`;
   }
 

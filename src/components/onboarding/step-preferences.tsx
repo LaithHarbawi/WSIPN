@@ -9,7 +9,6 @@ import {
   Gauge,
   Timer,
   Users,
-  Building2,
   CalendarDays,
   Clock,
   Monitor,
@@ -21,7 +20,6 @@ import {
   DIFFICULTY_OPTIONS,
   GAME_LENGTH_OPTIONS,
   PLAYER_MODE_OPTIONS,
-  SCOPE_OPTIONS,
   ERA_OPTIONS,
   TIME_COMMITMENT_OPTIONS,
   PLATFORM_OPTIONS,
@@ -243,16 +241,6 @@ export function StepPreferences() {
         <div className="border-t border-border-subtle/60 mx-12" />
 
         <SingleSelect
-          label="Game Scope"
-          description="Indie gem or blockbuster?"
-          icon={Building2}
-          options={SCOPE_OPTIONS}
-          selected={preferences.scope}
-          onChange={(v) => updatePreference("scope", v)}
-          index={5}
-        />
-
-        <SingleSelect
           label="Era Preference"
           description="Classic, modern, or no preference?"
           icon={CalendarDays}
@@ -272,14 +260,14 @@ export function StepPreferences() {
           index={7}
         />
 
-        <SingleSelect
-          label="Platform"
-          description="Where will you be playing?"
+        <MultiSelect
+          label="Platforms"
+          description="Where will you be playing? Select all that apply."
           icon={Monitor}
           options={PLATFORM_OPTIONS}
-          selected={preferences.platform}
-          onChange={(v) => updatePreference("platform", v)}
-          index={8}
+          selected={preferences.platforms}
+          onChange={(v) => updatePreference("platforms", v)}
+          index={7}
         />
 
         {/* Divider */}

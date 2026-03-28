@@ -211,6 +211,22 @@ export function StepTasteProfile() {
         )}
       </div>
 
+      {/* Liked games encouragement */}
+      {tasteProfile.loved.length >= 1 && tasteProfile.liked.length === 0 && activeSection !== "liked" && (
+        <div className="rounded-2xl bg-liked/5 border border-liked/15 px-5 py-3.5 flex items-center gap-3">
+          <ThumbsUp className="h-4 w-4 text-liked flex-shrink-0" />
+          <p className="text-sm text-text-secondary leading-relaxed flex-1">
+            <strong className="text-text-primary font-medium">Tip:</strong> Adding &ldquo;Liked&rdquo; games helps us distinguish between your favorites and games you simply enjoyed. This improves recommendation accuracy.
+          </p>
+          <button
+            onClick={() => setActiveSection("liked")}
+            className="text-xs font-semibold text-liked hover:text-liked/80 transition-colors whitespace-nowrap"
+          >
+            Add liked →
+          </button>
+        </div>
+      )}
+
       {/* Navigation */}
       <div className="flex items-center justify-between pt-6 border-t border-border-subtle">
         <button

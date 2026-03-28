@@ -25,28 +25,46 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const search = useCallback(async (q: string) => {
     if (q.length < 2) {
       setResults([]);
+      setIsSearching(false);
       return;
     }
+    // Cancel previous in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/games/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/games/search?q=${encodeURIComponent(q)}`, {
+        signal: controller.signal,
+      });
       if (res.ok) {
         const data = await res.json();
         setResults(data.results ?? []);
+        setIsOpen(true); // Ensure dropdown is open when results arrive
       }
-    } catch {
-      // Search failed — user can still type manually
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        // Search failed — user can still type manually
+      }
     } finally {
-      setIsSearching(false);
+      if (!controller.signal.aborted) {
+        setIsSearching(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => search(query), 300);
+    if (query.length >= 2) {
+      setIsSearching(true); // Show spinner immediately
+    }
+    debounceTimer.current = setTimeout(() => search(query), 150);
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
@@ -126,10 +144,9 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
       {isOpen && query.length >= 2 && (
         <div
           ref={dropdownRef}
-          className="absolute z-50 w-full mt-1.5 rounded-2xl bg-bg-secondary border border-border-subtle shadow-elevated overflow-hidden max-h-80 overflow-y-auto scrollbar-hide animate-fade-in-up"
-          style={{ animationDuration: "0.2s" }}
+          className="absolute z-50 w-full mt-1.5 rounded-2xl bg-bg-secondary border border-border-subtle shadow-elevated overflow-hidden max-h-80 overflow-y-auto scrollbar-hide"
         >
-          {results.map((game, i) => (
+          {results.map((game) => (
             <button
               key={game.id}
               onClick={() => selectGame(game)}
@@ -178,8 +195,14 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
             </button>
           )}
 
+          {isSearching && results.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-text-muted">
+              Searching...
+            </div>
+          )}
+
           {!isSearching && results.length === 0 && query.length >= 2 && (
-            <div className="px-4 py-8 text-center text-sm text-text-muted">
+            <div className="px-4 py-6 text-center text-sm text-text-muted">
               No games found. Press Enter to add manually.
             </div>
           )}

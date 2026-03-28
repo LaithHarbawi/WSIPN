@@ -77,15 +77,17 @@ interface RecommendationCardProps {
   recommendation: Recommendation;
   featured?: boolean;
   onFeedback?: (type: RecommendationFeedback) => void;
+  activeFeedback?: RecommendationFeedback | null;
 }
 
 export function RecommendationCard({
   recommendation: rec,
   featured,
   onFeedback,
+  activeFeedback,
 }: RecommendationCardProps) {
   const [expanded, setExpanded] = useState(featured ?? false);
-  const [feedbackGiven, setFeedbackGiven] = useState<string | null>(null);
+  const feedbackGiven = activeFeedback ?? null;
   const meta = TYPE_META[rec.type];
 
   const storeLinks = useMemo(
@@ -94,7 +96,6 @@ export function RecommendationCard({
   );
 
   const handleFeedback = (type: RecommendationFeedback) => {
-    setFeedbackGiven(type);
     onFeedback?.(type);
   };
 
@@ -231,7 +232,7 @@ export function RecommendationCard({
                   <AlertTriangle className="h-4 w-4 text-accent-warm mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="text-xs font-medium text-accent-warm mb-0.5">
-                      Possible risk
+                      Worth noting
                     </p>
                     <p className="text-sm text-text-secondary">
                       {rec.possibleRisk}
@@ -440,7 +441,7 @@ export function RecommendationCard({
                   <AlertTriangle className="h-4 w-4 text-accent-warm mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="text-xs font-medium text-accent-warm mb-0.5">
-                      Possible risk
+                      Worth noting
                     </p>
                     <p className="text-sm text-text-secondary">
                       {rec.possibleRisk}

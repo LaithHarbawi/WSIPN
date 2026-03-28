@@ -140,10 +140,9 @@ function buildConsensusPreferences(participants: GroupParticipant[]): CurrentPre
     difficulty: "No preference",
     gameLength: "No preference",
     playerMode: "Any",
-    scope: "Any",
     era: "Any era",
     timeCommitment: "Varies / No preference",
-    platform: "Any platform",
+    platforms: [],
     globalComment: "",
   };
 
@@ -162,9 +161,8 @@ function buildConsensusPreferences(participants: GroupParticipant[]): CurrentPre
     difficulty: mostCommon(participants.map((p) => p.preferences.difficulty), "No preference"),
     gameLength: mostCommon(participants.map((p) => p.preferences.gameLength), "No preference"),
     playerMode: mostCommon(participants.map((p) => p.preferences.playerMode), "Any"),
-    scope: mostCommon(participants.map((p) => p.preferences.scope), "Any"),
     era: mostCommon(participants.map((p) => p.preferences.era), "Any era"),
     timeCommitment: mostCommon(participants.map((p) => p.preferences.timeCommitment), "Varies / No preference"),
-    platform: mostCommon(participants.map((p) => p.preferences.platform), "Any platform"),
+    platforms: [...new Set(participants.flatMap((p) => p.preferences.platforms))],
   };
 }
