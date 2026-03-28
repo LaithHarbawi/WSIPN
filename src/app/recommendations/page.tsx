@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SectionRow } from "@/components/ui/section-row";
@@ -42,6 +42,8 @@ export default function RecommendationsPage() {
   const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
   // Titles the user marked "not interested" — persisted across sessions
   const [notInterestedTitles, setNotInterestedTitles] = useState<string[]>([]);
+  // Cumulative set of all titles shown across retries (survives re-renders, not state)
+  const previouslyShownRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     hydrate();
@@ -52,6 +54,13 @@ export default function RecommendationsPage() {
       if (saved) setFeedbackMap(JSON.parse(saved));
     } catch { /* ignore */ }
   }, [hydrate]);
+
+  // Track every recommendation title we've ever shown in this page session
+  useEffect(() => {
+    for (const r of recommendations) {
+      previouslyShownRef.current.add(r.title);
+    }
+  }, [recommendations]);
 
   const saveFeedbackMap = useCallback((map: Record<string, RecommendationFeedback>) => {
     setFeedbackMap(map);
@@ -82,11 +91,12 @@ export default function RecommendationsPage() {
   const heroRec = primary[0];
   const remainingPrimary = primary.slice(1);
 
-  /** Get all titles the user never wants to see (not interested + already shown). */
+  /** Get all titles the user never wants to see (not interested + all previously shown). */
   const getExcludedTitles = useCallback((): string[] => {
     const ni = guestStorage.getNotInterestedTitles();
-    const shown = recommendations.map((r) => r.title);
-    return [...new Set([...ni, ...shown])];
+    const currentTitles = recommendations.map((r) => r.title);
+    const allPrevious = [...previouslyShownRef.current];
+    return [...new Set([...ni, ...currentTitles, ...allPrevious])];
   }, [recommendations]);
 
   const handleRefresh = async () => {
