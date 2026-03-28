@@ -1,0 +1,548 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { SectionRow } from "@/components/ui/section-row";
+import { RecommendationCard } from "@/components/recommendations/recommendation-card";
+import { RecommendationSkeleton } from "@/components/ui/loading-skeleton";
+import { Button } from "@/components/ui/button";
+import { useAppStore } from "@/contexts/app-store";
+import * as guestStorage from "@/lib/guest-storage";
+import type { RecommendationFeedback, RecommendationSession } from "@/lib/types";
+import {
+  Gamepad2,
+  ArrowLeft,
+  RefreshCw,
+  Edit3,
+  Sparkles,
+  AlertCircle,
+  Zap,
+  Shield,
+  HelpCircle,
+  LayoutDashboard,
+  Play,
+} from "lucide-react";
+import { WsipnLogo } from "@/components/ui/wsipn-logo";
+
+export default function RecommendationsPage() {
+  const router = useRouter();
+  const {
+    recommendations,
+    isGenerating,
+    tasteProfile,
+    preferences,
+    setIsGenerating,
+    setRecommendations,
+    addSession,
+    hydrate,
+  } = useAppStore();
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  // Normalize types (LLM may return uppercase like "PRIMARY")
+  const normalized = recommendations.map((r) => ({
+    ...r,
+    type: r.type.toLowerCase() as typeof r.type,
+  }));
+
+  const primary = normalized.filter((r) => r.type === "primary");
+  const wildcards = normalized.filter((r) => r.type === "wildcard");
+  const safePick = normalized.find((r) => r.type === "safe_pick");
+  const surprise = normalized.find((r) => r.type === "surprise");
+  const specialPicks = [safePick, surprise].filter(Boolean);
+
+  const heroRec = primary[0];
+  const remainingPrimary = primary.slice(1);
+
+  const handleRefresh = async () => {
+    setIsGenerating(true);
+    try {
+      const res = await fetch("/api/recommendations/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tasteProfile, preferences }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setRecommendations(data.recommendations);
+
+      const session: RecommendationSession = {
+        id: `session-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        preferences,
+        recommendations: data.recommendations,
+      };
+      addSession(session);
+    } catch {
+      // Keep current recommendations on error
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleFeedback = (
+    recId: string,
+    type: RecommendationFeedback
+  ) => {
+    if (type === "save") {
+      const rec = recommendations.find((r) => r.id === recId);
+      if (rec) {
+        guestStorage.saveGame({
+          title: rec.title,
+          imageUrl: rec.imageUrl,
+          genres: rec.genres,
+          savedAt: new Date().toISOString(),
+        });
+      }
+    }
+  };
+
+  const hasResults = recommendations.length > 0;
+
+  const TYPE_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+    primary: { label: "Top Pick", color: "text-accent-primary", bg: "bg-accent-primary/15" },
+    wildcard: { label: "Wildcard", color: "text-accent-warm", bg: "bg-accent-warm/15" },
+    safe_pick: { label: "Safe Pick", color: "text-accent-success", bg: "bg-accent-success/15" },
+    surprise: { label: "Surprise", color: "text-accent-secondary", bg: "bg-accent-secondary/15" },
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-bg-primary">
+      {/* Ambient blobs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-accent-primary/[0.03] blur-[140px]" />
+        <div className="absolute bottom-[-30%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent-secondary/[0.04] blur-[140px]" />
+        <div className="absolute top-[40%] right-[-20%] w-[40%] h-[40%] rounded-full bg-accent-warm/[0.02] blur-[120px]" />
+      </div>
+
+      {/* ── Refined Header ── */}
+      <header className="relative z-20 px-6 py-4 w-full">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <WsipnLogo size={36} className="shadow-elevated group-hover:glow-md transition-all" />
+            <span className="text-lg font-extrabold tracking-tight">What Should I Play Next?</span>
+          </Link>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/onboarding")}
+              className="text-text-secondary hover:text-text-primary"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit Profile
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/dashboard")}
+              className="text-text-secondary hover:text-text-primary"
+            >
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              Dashboard
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Content ── */}
+      <main className="relative z-10 flex-1 pb-32">
+        {isGenerating ? (
+          <div className="max-w-5xl mx-auto px-6">
+            <RecommendationSkeleton />
+          </div>
+        ) : !hasResults ? (
+          /* Empty state */
+          <div className="flex flex-col items-center justify-center py-20 space-y-6 px-6">
+            <div className="w-16 h-16 rounded-2xl bg-bg-tertiary flex items-center justify-center">
+              <AlertCircle className="h-8 w-8 text-text-muted" />
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-semibold">No recommendations yet</h2>
+              <p className="text-text-secondary max-w-md">
+                Complete the onboarding flow to build your taste profile and get
+                personalized game recommendations.
+              </p>
+            </div>
+            <Button onClick={() => router.push("/onboarding")}>
+              <ArrowLeft className="h-4 w-4" />
+              Go to Onboarding
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {/* ═══════════════════════════════════════════
+                HERO SECTION — first primary recommendation
+                ═══════════════════════════════════════════ */}
+            {heroRec && (
+              <section className="relative w-full overflow-hidden" style={{ minHeight: "480px" }}>
+                {/* Background image */}
+                <div className="absolute inset-0">
+                  {(heroRec.screenshotUrl || heroRec.imageUrl) ? (
+                    <img
+                      src={heroRec.screenshotUrl || heroRec.imageUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-bg-tertiary" />
+                  )}
+                  {/* Gradient overlays */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-bg-primary via-bg-primary/80 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/40 to-transparent" />
+                  <div className="absolute inset-0 bg-bg-primary/20" />
+                </div>
+
+                {/* Hero content */}
+                <div className="relative z-10 max-w-7xl mx-auto px-6 flex flex-col justify-end h-full" style={{ minHeight: "480px" }}>
+                  <div className="max-w-2xl pb-10 space-y-4">
+                    {/* Badge */}
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${TYPE_BADGE[heroRec.type].bg} ${TYPE_BADGE[heroRec.type].color} backdrop-blur-sm`}>
+                        <Sparkles className="h-3 w-3" />
+                        {TYPE_BADGE[heroRec.type].label}
+                      </span>
+                      {heroRec.confidence && (
+                        <span className="text-xs font-medium text-accent-primary/80">
+                          {heroRec.confidence} match
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Title */}
+                    <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.1]">
+                      {heroRec.title}
+                    </h1>
+
+                    {/* Meta */}
+                    <div className="flex items-center gap-3 text-sm text-text-secondary">
+                      {heroRec.year && <span>{heroRec.year}</span>}
+                      {heroRec.genres?.length ? (
+                        <>
+                          <span className="opacity-40">|</span>
+                          <span>{heroRec.genres.slice(0, 3).join(", ")}</span>
+                        </>
+                      ) : null}
+                      {heroRec.metacritic && (
+                        <>
+                          <span className="opacity-40">|</span>
+                          <span className={
+                            heroRec.metacritic >= 75
+                              ? "text-accent-success font-semibold"
+                              : heroRec.metacritic >= 50
+                              ? "text-accent-warm font-semibold"
+                              : "text-accent-danger font-semibold"
+                          }>
+                            {heroRec.metacritic} Metacritic
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Explanation */}
+                    <p className="text-base sm:text-lg text-text-secondary leading-relaxed max-w-xl">
+                      {heroRec.explanation}
+                    </p>
+
+                    {/* Hero actions */}
+                    <div className="flex items-center gap-3 pt-2">
+                      <Button
+                        onClick={() => handleFeedback(heroRec.id, "save")}
+                        className="shadow-elevated"
+                      >
+                        <Play className="h-4 w-4" />
+                        Save to Play Later
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleFeedback(heroRec.id, "more_like_this")}
+                        className="glass"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        More Like This
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* ═══════════════════════════════════════════
+                NETFLIX-STYLE HORIZONTAL SCROLL ROWS
+                ═══════════════════════════════════════════ */}
+            <div className="space-y-10 max-w-7xl mx-auto px-6">
+              {/* Count badge */}
+              <div className="flex items-center gap-3">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent-primary/10 border border-accent-primary/20 text-accent-primary text-sm font-medium">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {recommendations.length} games curated for you
+                </div>
+              </div>
+
+              {/* ── Top Picks Row ── */}
+              {remainingPrimary.length > 0 && (
+                <SectionRow
+                  title="Top Picks"
+                  subtitle="Our best matches for your taste profile"
+                  icon={<Sparkles className="h-5 w-5 text-accent-primary" />}
+                  scrollable
+                >
+                  {remainingPrimary.map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="flex-shrink-0 w-[280px] group cursor-pointer"
+                    >
+                      <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                        {/* Card image */}
+                        <div className="relative h-40 overflow-hidden">
+                          {(rec.screenshotUrl || rec.imageUrl) ? (
+                            <img
+                              src={rec.screenshotUrl || rec.imageUrl}
+                              alt={rec.title}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
+                              <Gamepad2 className="h-8 w-8 text-text-muted" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
+                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${TYPE_BADGE[rec.type].bg} ${TYPE_BADGE[rec.type].color} backdrop-blur-sm`}>
+                            <Sparkles className="h-2.5 w-2.5" />
+                            {TYPE_BADGE[rec.type].label}
+                          </span>
+                        </div>
+                        {/* Card body */}
+                        <div className="p-4 space-y-2">
+                          <h3 className="font-bold text-sm text-text-primary truncate">
+                            {rec.title}
+                          </h3>
+                          <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+                            {rec.explanation}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] text-text-muted pt-1">
+                            {rec.year && <span>{rec.year}</span>}
+                            {rec.genres?.length ? (
+                              <>
+                                <span className="opacity-40">·</span>
+                                <span>{rec.genres.slice(0, 2).join(", ")}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </SectionRow>
+              )}
+
+              {/* ── Wildcard Picks Row ── */}
+              {wildcards.length > 0 && (
+                <SectionRow
+                  title="Wildcard Picks"
+                  subtitle="Thoughtful stretches based on patterns in your taste"
+                  icon={<Zap className="h-5 w-5 text-accent-warm" />}
+                  scrollable
+                >
+                  {wildcards.map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="flex-shrink-0 w-[280px] group cursor-pointer"
+                    >
+                      <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                        <div className="relative h-40 overflow-hidden">
+                          {(rec.screenshotUrl || rec.imageUrl) ? (
+                            <img
+                              src={rec.screenshotUrl || rec.imageUrl}
+                              alt={rec.title}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
+                              <Gamepad2 className="h-8 w-8 text-text-muted" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
+                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${TYPE_BADGE[rec.type].bg} ${TYPE_BADGE[rec.type].color} backdrop-blur-sm`}>
+                            <Zap className="h-2.5 w-2.5" />
+                            {TYPE_BADGE[rec.type].label}
+                          </span>
+                        </div>
+                        <div className="p-4 space-y-2">
+                          <h3 className="font-bold text-sm text-text-primary truncate">
+                            {rec.title}
+                          </h3>
+                          <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+                            {rec.explanation}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] text-text-muted pt-1">
+                            {rec.year && <span>{rec.year}</span>}
+                            {rec.genres?.length ? (
+                              <>
+                                <span className="opacity-40">·</span>
+                                <span>{rec.genres.slice(0, 2).join(", ")}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </SectionRow>
+              )}
+
+              {/* ── Special Picks Row (safe_pick + surprise) ── */}
+              {specialPicks.length > 0 && (
+                <SectionRow
+                  title="Special Picks"
+                  subtitle="A safe bet and a wildcard surprise just for you"
+                  icon={<Shield className="h-5 w-5 text-accent-success" />}
+                  scrollable
+                >
+                  {specialPicks.map((rec) => {
+                    if (!rec) return null;
+                    const badge = TYPE_BADGE[rec.type];
+                    const BadgeIcon = rec.type === "safe_pick" ? Shield : HelpCircle;
+                    return (
+                      <div
+                        key={rec.id}
+                        className="flex-shrink-0 w-[280px] group cursor-pointer"
+                      >
+                        <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                          <div className="relative h-40 overflow-hidden">
+                            {(rec.screenshotUrl || rec.imageUrl) ? (
+                              <img
+                                src={rec.screenshotUrl || rec.imageUrl}
+                                alt={rec.title}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
+                                <Gamepad2 className="h-8 w-8 text-text-muted" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
+                            <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${badge.bg} ${badge.color} backdrop-blur-sm`}>
+                              <BadgeIcon className="h-2.5 w-2.5" />
+                              {badge.label}
+                            </span>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            <h3 className="font-bold text-sm text-text-primary truncate">
+                              {rec.title}
+                            </h3>
+                            <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+                              {rec.explanation}
+                            </p>
+                            <div className="flex items-center gap-2 text-[10px] text-text-muted pt-1">
+                              {rec.year && <span>{rec.year}</span>}
+                              {rec.genres?.length ? (
+                                <>
+                                  <span className="opacity-40">·</span>
+                                  <span>{rec.genres.slice(0, 2).join(", ")}</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </SectionRow>
+              )}
+
+              {/* ═══════════════════════════════════════════
+                  FULL DETAIL CARDS — vertical list
+                  ═══════════════════════════════════════════ */}
+              <div className="pt-6 border-t border-border-subtle space-y-8">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold tracking-tight">All Recommendations</h2>
+                  <p className="text-sm text-text-muted">
+                    Detailed view with explanations, risks, and actions
+                  </p>
+                </div>
+
+                {/* Hero rec full card */}
+                {heroRec && (
+                  <RecommendationCard
+                    key={heroRec.id}
+                    recommendation={heroRec}
+                    featured
+                    onFeedback={(type) => handleFeedback(heroRec.id, type)}
+                  />
+                )}
+
+                {/* Remaining primary */}
+                {remainingPrimary.map((rec) => (
+                  <RecommendationCard
+                    key={rec.id}
+                    recommendation={rec}
+                    onFeedback={(type) => handleFeedback(rec.id, type)}
+                  />
+                ))}
+
+                {/* Wildcards */}
+                {wildcards.map((rec) => (
+                  <RecommendationCard
+                    key={rec.id}
+                    recommendation={rec}
+                    onFeedback={(type) => handleFeedback(rec.id, type)}
+                  />
+                ))}
+
+                {/* Special picks */}
+                {specialPicks.map((rec) =>
+                  rec ? (
+                    <RecommendationCard
+                      key={rec.id}
+                      recommendation={rec}
+                      onFeedback={(type) => handleFeedback(rec.id, type)}
+                    />
+                  ) : null
+                )}
+              </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════
+                ACTION BAR — sticky bottom
+                ═══════════════════════════════════════════ */}
+            <div className="fixed bottom-0 left-0 right-0 z-30">
+              <div className="glass border-t border-border-subtle/50 shadow-elevated">
+                <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-center gap-3">
+                  <Button
+                    variant="secondary"
+                    onClick={handleRefresh}
+                    loading={isGenerating}
+                    className="glow-md"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Try Different Angle
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => router.push("/onboarding")}
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    Edit Taste Profile
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      useAppStore.getState().setOnboardingStep(2);
+                      router.push("/onboarding");
+                    }}
+                  >
+                    Edit Preferences
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
