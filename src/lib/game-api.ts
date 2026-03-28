@@ -149,12 +149,18 @@ export async function getPopularGames(
 export async function findGameByName(
   title: string,
   year?: string
-): Promise<{ imageUrl: string | null; screenshotUrl: string | null; rating: number | null; verified: boolean }> {
+): Promise<{
+  imageUrl: string | null;
+  screenshotUrl: string | null;
+  rating: number | null;
+  ratingCount: number | null;
+  verified: boolean;
+}> {
   try {
     const raw = (await igdbFetch(
       "games",
       `search "${title.replace(/"/g, '\\"')}";
-       fields name, first_release_date, cover.image_id, screenshots.image_id, artworks.image_id, total_rating;
+       fields name, first_release_date, cover.image_id, screenshots.image_id, artworks.image_id, total_rating, total_rating_count;
        limit 10;`
     )) as Array<{
       name: string;
@@ -163,6 +169,7 @@ export async function findGameByName(
       screenshots?: { image_id: string }[];
       artworks?: { image_id: string }[];
       total_rating?: number;
+      total_rating_count?: number;
     }>;
 
     // Find best match — prioritize exact name + year match, then exact name, then fuzzy
@@ -214,7 +221,7 @@ export async function findGameByName(
       .sort((a, b) => b.score - a.score)[0];
 
     if (!best) {
-      return { imageUrl: null, screenshotUrl: null, rating: null, verified: false };
+      return { imageUrl: null, screenshotUrl: null, rating: null, ratingCount: null, verified: false };
     }
 
     const match = best.game;
@@ -227,9 +234,10 @@ export async function findGameByName(
       imageUrl: igdbImageUrl(match.cover?.image_id, "720p") ?? null,
       screenshotUrl: igdbImageUrl(heroImageId, "1080p") ?? null,
       rating: match.total_rating ? Math.round(match.total_rating) : null,
+      ratingCount: match.total_rating_count ?? null,
       verified,
     };
   } catch {
-    return { imageUrl: null, screenshotUrl: null, rating: null, verified: false };
+    return { imageUrl: null, screenshotUrl: null, rating: null, ratingCount: null, verified: false };
   }
 }

@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     console.error("Recommendation generation failed:", {
       message: errMsg,
       stack: errStack,
-      provider: process.env.GROQ_API_KEY ? "groq" : "openai",
+      provider: process.env.OPENAI_API_KEY ? "openai" : "groq",
     });
     return NextResponse.json(
       { error: "Failed to generate recommendations. Please try again." },

@@ -11,9 +11,11 @@ import type {
 } from "./group-merge";
 import { findGameByName } from "./game-api";
 
-// LLM provider chain: Groq (free, fast) → OpenAI (fallback)
-// Groq runs Llama 3.3 70B on custom hardware — free tier: 30 RPM, 15K tokens/min
-// OpenAI GPT-4o used as fallback if Groq is unavailable
+// LLM provider chain: OpenAI GPT-4o (primary) → Groq Llama 3.3 70B (fallback)
+
+const openaiClient = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 const groqClient = process.env.GROQ_API_KEY
   ? new OpenAI({
@@ -22,11 +24,7 @@ const groqClient = process.env.GROQ_API_KEY
     })
   : null;
 
-const openaiClient = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
-/** Call LLM with automatic fallback: Groq → OpenAI */
+/** Call LLM with automatic fallback: OpenAI → Groq */
 async function llmChat(
   messages: { role: "system" | "user"; content: string }[],
   opts: { maxTokens?: number; temperature?: number } = {}
@@ -51,24 +49,24 @@ async function llmChat(
     return text;
   };
 
-  // Try Groq first (free + fast), fall back to OpenAI
-  if (groqClient) {
+  // Try OpenAI first (best quality), fall back to Groq (free)
+  if (openaiClient) {
     try {
-      return await callProvider(groqClient, "llama-3.3-70b-versatile", "Groq");
+      return await callProvider(openaiClient, "gpt-4o", "OpenAI");
     } catch (err) {
-      console.error("[LLM] Groq failed, attempting OpenAI fallback:", err);
-      if (openaiClient) {
-        return await callProvider(openaiClient, "gpt-4o", "OpenAI");
+      console.error("[LLM] OpenAI failed, attempting Groq fallback:", err);
+      if (groqClient) {
+        return await callProvider(groqClient, "llama-3.3-70b-versatile", "Groq");
       }
       throw err;
     }
   }
 
-  if (openaiClient) {
-    return await callProvider(openaiClient, "gpt-4o", "OpenAI");
+  if (groqClient) {
+    return await callProvider(groqClient, "llama-3.3-70b-versatile", "Groq");
   }
 
-  throw new Error("No LLM provider configured — set GROQ_API_KEY or OPENAI_API_KEY");
+  throw new Error("No LLM provider configured — set OPENAI_API_KEY or GROQ_API_KEY");
 }
 
 function buildTasteProfileSummary(profile: TasteProfile): string {
@@ -296,15 +294,23 @@ Give me 12 personalized recommendations based SOLELY on my taste profile and pre
   }));
 }
 
+// ── Popularity thresholds for code-level type enforcement ──
+// These override the LLM's categorization using real IGDB data.
+// ratingCount = number of people who rated the game on IGDB — a reliable popularity proxy.
+const POPULARITY_THRESHOLDS = {
+  MAINSTREAM: 500,   // 500+ ratings = well-known game (NOT a hidden gem)
+  POPULAR: 200,      // 200+ ratings = popular enough to not be "discovery"
+} as const;
+
 // Enrich recommendations with IGDB images + filter out hallucinated games
-// Any game that IGDB cannot verify is dropped from the results
+// Also enforces type categorization using IGDB popularity data
 export async function enrichWithImages(
   recommendations: Recommendation[]
 ): Promise<Recommendation[]> {
   const results = await Promise.all(
     recommendations.map(async (rec): Promise<Recommendation | null> => {
       try {
-        const { imageUrl, screenshotUrl, rating, verified } = await findGameByName(rec.title, rec.year);
+        const { imageUrl, screenshotUrl, rating, ratingCount, verified } = await findGameByName(rec.title, rec.year);
         if (!verified) {
           console.warn(`Dropping unverified game: "${rec.title}" — not found in IGDB`);
           return null;
@@ -314,13 +320,58 @@ export async function enrichWithImages(
           imageUrl: imageUrl ?? rec.imageUrl,
           screenshotUrl: screenshotUrl ?? rec.screenshotUrl,
           metacritic: rating ?? rec.metacritic,
+          ratingCount: ratingCount ?? undefined,
         };
       } catch {
         return null; // Can't verify — drop it
       }
     })
   );
-  return results.filter((r): r is Recommendation => r !== null);
+
+  const verified = results.filter((r): r is Recommendation => r !== null);
+
+  // ── Code-level type enforcement ──
+  // The LLM often mislabels popular games as "discovery". We fix this using real data.
+  const enforced = verified.map((rec) => {
+    const count = rec.ratingCount ?? 0;
+    const type = rec.type;
+
+    // If LLM labeled a mainstream game as "discovery", promote to "primary"
+    if (type === "discovery" && count >= POPULARITY_THRESHOLDS.MAINSTREAM) {
+      console.log(`[Bias fix] Reclassifying "${rec.title}" from discovery→primary (${count} IGDB ratings)`);
+      return { ...rec, type: "primary" as const };
+    }
+
+    return rec;
+  });
+
+  // ── Rebalance: ensure we have enough genuine discoveries ──
+  // After reclassification, check if we still have 3+ discoveries.
+  // If not, demote the least-popular primary/wildcard picks to fill the gap.
+  const discoveries = enforced.filter((r) => r.type === "discovery");
+  const MIN_DISCOVERIES = 3;
+
+  if (discoveries.length < MIN_DISCOVERIES) {
+    const needed = MIN_DISCOVERIES - discoveries.length;
+    // Find primary/wildcard picks sorted by popularity (ascending = least popular first)
+    const demoteCandidates = enforced
+      .filter((r) => r.type === "primary" || r.type === "wildcard")
+      .sort((a, b) => (a.ratingCount ?? 0) - (b.ratingCount ?? 0));
+
+    const toDemote = new Set(
+      demoteCandidates.slice(0, needed).map((r) => r.id)
+    );
+
+    return enforced.map((rec) => {
+      if (toDemote.has(rec.id)) {
+        console.log(`[Rebalance] Demoting "${rec.title}" to discovery (${rec.ratingCount ?? "?"} ratings, was ${rec.type})`);
+        return { ...rec, type: "discovery" as const };
+      }
+      return rec;
+    });
+  }
+
+  return enforced;
 }
 
 // Enrich group recommendations with IGDB images + filter out hallucinated games
@@ -340,7 +391,7 @@ export async function enrichGroupWithImages(
           imageUrl: imageUrl ?? rec.imageUrl,
           screenshotUrl: screenshotUrl ?? rec.screenshotUrl,
           metacritic: rating ?? rec.metacritic,
-        };
+        } as GroupRecommendation;
       } catch {
         return null;
       }

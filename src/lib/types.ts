@@ -84,6 +84,8 @@ export interface Recommendation {
   imageUrl?: string;
   screenshotUrl?: string;
   metacritic?: number;
+  /** IGDB total_rating_count — used for code-level popularity enforcement */
+  ratingCount?: number;
 }
 
 export interface RecommendationSession {
