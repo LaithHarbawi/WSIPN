@@ -15,6 +15,7 @@ const KEYS = {
   onboardingStep: "wsipn_onboarding_step",
   recommendations: "wsipn_recommendations",
   steamProfile: "wsipn_steam_profile",
+  notInterested: "wsipn_not_interested",
 } as const;
 
 const MIGRATION_KEY = "wsipn_migration_v2_done";
@@ -230,6 +231,27 @@ export function getOnboardingStep(): number {
 
 export function saveOnboardingStep(step: number) {
   setItem(KEYS.onboardingStep, step);
+}
+
+// ── Not Interested ──
+
+export function getNotInterestedTitles(): string[] {
+  return getItem(KEYS.notInterested, []);
+}
+
+export function addNotInterested(title: string) {
+  const list = getNotInterestedTitles();
+  const normalized = title.toLowerCase();
+  if (!list.some((t) => t.toLowerCase() === normalized)) {
+    list.push(title);
+    setItem(KEYS.notInterested, list);
+  }
+}
+
+export function removeNotInterested(title: string) {
+  const normalized = title.toLowerCase();
+  const list = getNotInterestedTitles().filter((t) => t.toLowerCase() !== normalized);
+  setItem(KEYS.notInterested, list);
 }
 
 // ── Migration: Move all guest data for Supabase upload ──

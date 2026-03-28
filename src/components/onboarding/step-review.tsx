@@ -51,7 +51,12 @@ export function StepReview() {
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasteProfile, preferences, steamLibraryTitles }),
+        body: JSON.stringify({
+          tasteProfile,
+          preferences,
+          steamLibraryTitles,
+          notInterestedTitles: guestStorage.getNotInterestedTitles(),
+        }),
       });
 
       if (!res.ok) throw new Error("Generation failed");

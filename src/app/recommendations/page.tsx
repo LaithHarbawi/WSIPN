@@ -40,9 +40,12 @@ export default function RecommendationsPage() {
 
   // Feedback state: { recId: feedbackType }
   const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
+  // Titles the user marked "not interested" — persisted across sessions
+  const [notInterestedTitles, setNotInterestedTitles] = useState<string[]>([]);
 
   useEffect(() => {
     hydrate();
+    setNotInterestedTitles(guestStorage.getNotInterestedTitles());
     // Restore saved feedback from localStorage
     try {
       const saved = localStorage.getItem("wsipn_rec_feedback");
@@ -79,17 +82,23 @@ export default function RecommendationsPage() {
   const heroRec = primary[0];
   const remainingPrimary = primary.slice(1);
 
+  /** Get all titles the user never wants to see (not interested + already shown). */
+  const getExcludedTitles = useCallback((): string[] => {
+    const ni = guestStorage.getNotInterestedTitles();
+    const shown = recommendations.map((r) => r.title);
+    return [...new Set([...ni, ...shown])];
+  }, [recommendations]);
+
   const handleRefresh = async () => {
     setIsGenerating(true);
     try {
-      // Pass current rec titles so LLM avoids them
-      const alreadyShownTitles = recommendations.map((r) => r.title);
+      const excludedTitles = getExcludedTitles();
       const augmentedPreferences = {
         ...preferences,
         globalComment: [
           preferences.globalComment,
-          alreadyShownTitles.length > 0
-            ? `Do NOT recommend any of these games that were already shown: ${alreadyShownTitles.join(", ")}. Give me completely different recommendations.`
+          excludedTitles.length > 0
+            ? `Do NOT recommend any of these games (already shown or not interested): ${excludedTitles.join(", ")}. Give me completely different recommendations.`
             : "",
         ].filter(Boolean).join("\n\n"),
       };
@@ -101,6 +110,7 @@ export default function RecommendationsPage() {
           tasteProfile,
           preferences: augmentedPreferences,
           steamLibraryTitles: getSteamExclusions(),
+          notInterestedTitles: guestStorage.getNotInterestedTitles(),
         }),
       });
       if (!res.ok) throw new Error("Failed");
@@ -139,20 +149,31 @@ export default function RecommendationsPage() {
       }
     }
 
+    if (type === "not_interested") {
+      const rec = recommendations.find((r) => r.id === recId);
+      if (rec) {
+        // Persist to not-interested list
+        guestStorage.addNotInterested(rec.title);
+        setNotInterestedTitles(guestStorage.getNotInterestedTitles());
+        // Immediately remove from current recommendations
+        const filtered = recommendations.filter((r) => r.id !== recId);
+        setRecommendations(filtered);
+      }
+      return; // Don't proceed to more_like_this check
+    }
+
     if (type === "more_like_this") {
       const sourceRec = recommendations.find((r) => r.id === recId);
       if (!sourceRec) return;
 
       setIsGenerating(true);
       try {
-        // Add the source game to the global comment so LLM knows what to riff on,
-        // and pass existing rec titles to avoid duplicates
-        const existingTitles = recommendations.map((r) => r.title);
+        const excludedTitles = getExcludedTitles();
         const augmentedPreferences = {
           ...preferences,
           globalComment: [
             preferences.globalComment,
-            `IMPORTANT: Give me more games like "${sourceRec.title}". Match its specific mechanics, feel, and what makes it special. Do NOT recommend "${sourceRec.title}" itself or any of these already-recommended games: ${existingTitles.join(", ")}.`,
+            `IMPORTANT: Give me more games like "${sourceRec.title}". Match its specific mechanics, feel, and what makes it special. Do NOT recommend "${sourceRec.title}" itself or any of these games: ${excludedTitles.join(", ")}.`,
           ].filter(Boolean).join("\n\n"),
         };
 
@@ -163,6 +184,7 @@ export default function RecommendationsPage() {
             tasteProfile,
             preferences: augmentedPreferences,
             steamLibraryTitles: getSteamExclusions(),
+          notInterestedTitles: guestStorage.getNotInterestedTitles(),
           }),
         });
         if (!res.ok) throw new Error("Failed");

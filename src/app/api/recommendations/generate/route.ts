@@ -6,10 +6,11 @@ import type { TasteProfile, CurrentPreferences, GameSearchResult } from "@/lib/t
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tasteProfile, preferences, steamLibraryTitles } = body as {
+    const { tasteProfile, preferences, steamLibraryTitles, notInterestedTitles } = body as {
       tasteProfile: TasteProfile;
       preferences: CurrentPreferences;
       steamLibraryTitles?: string[];
+      notInterestedTitles?: string[];
     };
 
     if (!tasteProfile) {
@@ -36,11 +37,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate recommendations via LLM
+    // Merge all exclusion titles
+    const allExclusions = [
+      ...(steamLibraryTitles ?? []),
+      ...(notInterestedTitles ?? []),
+    ];
+
     const recommendations = await generateRecommendations(
       tasteProfile,
       preferences,
       candidates,
-      steamLibraryTitles
+      allExclusions.length > 0 ? allExclusions : undefined
     );
 
     // Enrich with cover images from IGDB
