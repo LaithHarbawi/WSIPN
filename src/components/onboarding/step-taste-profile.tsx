@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Heart,
   ThumbsUp,
@@ -50,12 +50,19 @@ const SECTIONS: {
   },
 ];
 
-export function StepTasteProfile() {
+export function StepTasteProfile({ steamIdFromLogin }: { steamIdFromLogin?: string | null }) {
   const { tasteProfile, addGame, removeGame, updateGame, setOnboardingStep } =
     useAppStore();
   const [activeSection, setActiveSection] = useState<GameSentiment>("loved");
   const [steamModalOpen, setSteamModalOpen] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
+
+  // Auto-open Steam modal when returning from Steam OpenID login
+  useEffect(() => {
+    if (steamIdFromLogin) {
+      setSteamModalOpen(true);
+    }
+  }, [steamIdFromLogin]);
 
   const totalGames =
     tasteProfile.loved.length +
@@ -126,6 +133,7 @@ export function StepTasteProfile() {
       <SteamImportModal
         open={steamModalOpen}
         onClose={() => setSteamModalOpen(false)}
+        steamIdFromLogin={steamIdFromLogin}
       />
 
       {/* Section tabs + inline continue */}

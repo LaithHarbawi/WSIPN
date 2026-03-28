@@ -37,9 +37,11 @@ interface SteamImportModalProps {
   onClose: () => void;
   /** Optional external handler — when provided, imported entries go here instead of the global store. */
   onImport?: (entries: GameEntry[]) => void;
+  /** Pre-filled Steam ID from OpenID login redirect */
+  steamIdFromLogin?: string | null;
 }
 
-export function SteamImportModal({ open, onClose, onImport }: SteamImportModalProps) {
+export function SteamImportModal({ open, onClose, onImport, steamIdFromLogin }: SteamImportModalProps) {
   const { addGame, userId } = useAppStore();
   const [steamInput, setSteamInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,6 +55,7 @@ export function SteamImportModal({ open, onClose, onImport }: SteamImportModalPr
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [imported, setImported] = useState(false);
   const [restoredFromCache, setRestoredFromCache] = useState(false);
+  const [showManualInput, setShowManualInput] = useState(false);
 
   // Restore saved Steam profile on open
   useEffect(() => {
@@ -65,6 +68,43 @@ export function SteamImportModal({ open, onClose, onImport }: SteamImportModalPr
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Auto-fetch when Steam ID comes from OpenID login
+  useEffect(() => {
+    if (steamIdFromLogin && open && games.length === 0 && !loading) {
+      setSteamInput(steamIdFromLogin);
+      // Trigger fetch with the Steam ID
+      const autoFetch = async () => {
+        setLoading(true);
+        setError("");
+        try {
+          const res = await fetch(
+            `/api/steam/library?id=${encodeURIComponent(steamIdFromLogin)}`
+          );
+          const data = await res.json();
+          if (!res.ok) {
+            setError(data.error || "Failed to fetch library");
+          } else {
+            setGames(data.games);
+            const steamData = {
+              input: steamIdFromLogin,
+              steamId: data.steamId,
+              games: data.games,
+              fetchedAt: new Date().toISOString(),
+            };
+            guestStorage.saveSteamProfile(steamData);
+            if (userId) remote.saveSteamProfileRemote(userId, steamData);
+          }
+        } catch {
+          setError("Failed to connect. Please try again.");
+        } finally {
+          setLoading(false);
+        }
+      };
+      autoFetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [steamIdFromLogin, open]);
 
   const fetchLibrary = async () => {
     if (!steamInput.trim()) return;
@@ -202,25 +242,75 @@ export function SteamImportModal({ open, onClose, onImport }: SteamImportModalPr
           {/* Input stage */}
           {games.length === 0 && !loading && (
             <div className="p-6 space-y-5">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-text-secondary">
-                  Steam Profile URL or Username
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={steamInput}
-                    onChange={(e) => setSteamInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && fetchLibrary()}
-                    placeholder="https://steamcommunity.com/id/yourname"
-                    className="flex-1 px-4 py-3 rounded-xl bg-bg-input border border-border-subtle text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/40 focus:border-accent-primary/60 transition-all"
-                  />
-                  <Button onClick={fetchLibrary} disabled={!steamInput.trim()}>
-                    <Download className="h-4 w-4" />
-                    Fetch
-                  </Button>
-                </div>
+              {/* Primary option: Sign in with Steam */}
+              <div className="space-y-3">
+                <a
+                  href="/api/steam/login"
+                  className="flex items-center justify-center gap-3 w-full px-5 py-3.5 rounded-xl bg-[#1b2838] hover:bg-[#2a475e] border border-[#66c0f4]/20 text-white font-medium transition-all hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <svg viewBox="0 0 256 259" className="h-5 w-5" fill="currentColor">
+                    <path d="M128.079 0C58.262 0 1.585 54.255 0 122.803l68.697 28.555c5.849-4.012 12.898-6.36 20.494-6.36.676 0 1.343.021 2.005.059l30.67-44.657v-.626c0-26.108 21.173-47.353 47.2-47.353s47.2 21.245 47.2 47.353c0 26.108-21.173 47.354-47.2 47.354h-1.094l-43.761 31.378c0 .529.034 1.062.034 1.601 0 19.594-15.872 35.516-35.404 35.516-17.256 0-31.692-12.41-34.771-28.794L2.254 163.681C18.527 218.552 68.845 259 128.079 259c70.693 0 128.003-57.315 128.003-128.004C256.082 57.314 198.772 0 128.079 0" />
+                  </svg>
+                  Sign in with Steam
+                </a>
+                <p className="text-xs text-text-muted text-center">
+                  Fastest way — signs in securely through Steam&apos;s official login page
+                </p>
               </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-border-subtle" />
+                <span className="text-xs text-text-muted">or enter manually</span>
+                <div className="flex-1 h-px bg-border-subtle" />
+              </div>
+
+              {/* Manual input (collapsed by default) */}
+              {!showManualInput ? (
+                <button
+                  onClick={() => setShowManualInput(true)}
+                  className="w-full text-left text-sm text-text-muted hover:text-text-secondary transition-colors flex items-center gap-2"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                  Paste a Steam profile URL or ID instead
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-text-secondary">
+                      Steam Profile URL, Custom ID, or Steam64 ID
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={steamInput}
+                        onChange={(e) => setSteamInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && fetchLibrary()}
+                        placeholder="https://steamcommunity.com/id/yourname"
+                        className="flex-1 px-4 py-3 rounded-xl bg-bg-input border border-border-subtle text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/40 focus:border-accent-primary/60 transition-all"
+                      />
+                      <Button onClick={fetchLibrary} disabled={!steamInput.trim()}>
+                        <Download className="h-4 w-4" />
+                        Fetch
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Accepted formats */}
+                  <div className="rounded-lg bg-bg-tertiary/40 border border-border-subtle p-3 space-y-1.5">
+                    <p className="text-xs font-medium text-text-secondary">Accepted formats:</p>
+                    <div className="grid gap-1 text-xs text-text-muted font-mono">
+                      <span>https://steamcommunity.com/id/<strong className="text-text-secondary">yourname</strong></span>
+                      <span>https://steamcommunity.com/profiles/<strong className="text-text-secondary">76561198012345678</strong></span>
+                      <span><strong className="text-text-secondary">yourname</strong> (custom URL name)</span>
+                      <span><strong className="text-text-secondary">76561198012345678</strong> (Steam64 ID)</span>
+                    </div>
+                    <p className="text-xs text-text-muted pt-1">
+                      Find your URL by opening Steam → clicking your profile name → copying from the browser address bar
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {error && (
                 <div className="flex items-start gap-3 rounded-xl bg-accent-danger/10 border border-accent-danger/20 px-4 py-3">
@@ -229,25 +319,22 @@ export function SteamImportModal({ open, onClose, onImport }: SteamImportModalPr
                 </div>
               )}
 
+              {/* Requirements notice */}
               <div className="rounded-xl bg-bg-tertiary/50 border border-border-subtle p-4 space-y-2">
-                <p className="text-sm font-medium text-text-secondary">
-                  How it works
+                <p className="text-sm font-medium text-text-secondary flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-accent-warm" />
+                  Your Steam profile must be public
                 </p>
-                <ol className="text-sm text-text-muted space-y-1.5 list-decimal list-inside">
-                  <li>Paste your Steam profile URL or custom username</li>
-                  <li>
-                    Your profile and game details must be set to{" "}
-                    <strong className="text-text-secondary">Public</strong>
-                  </li>
-                  <li>
-                    We&apos;ll load your library — rate games with one click
-                  </li>
-                  <li>Import your rated games into your taste profile</li>
+                <p className="text-sm text-text-muted">
+                  We need to see your game library to import it. To make it public:
+                </p>
+                <ol className="text-sm text-text-muted space-y-1 list-decimal list-inside pl-1">
+                  <li>Open <strong className="text-text-secondary">Steam</strong> → click your name (top right) → <strong className="text-text-secondary">View my profile</strong></li>
+                  <li>Click <strong className="text-text-secondary">Edit Profile</strong> → <strong className="text-text-secondary">Privacy Settings</strong></li>
+                  <li>Set <strong className="text-text-secondary">My profile</strong> and <strong className="text-text-secondary">Game details</strong> to <strong className="text-accent-success">Public</strong></li>
                 </ol>
-                <p className="text-xs text-text-muted pt-1">
-                  To make your profile public: Steam → Settings → Privacy →
-                  set &ldquo;My profile&rdquo; and &ldquo;Game details&rdquo; to
-                  Public
+                <p className="text-xs text-text-muted pt-1 italic">
+                  You can set it back to private after importing.
                 </p>
               </div>
             </div>
