@@ -76,7 +76,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ recommendations: enriched });
   } catch (error) {
-    console.error("Recommendation generation failed:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    console.error("Recommendation generation failed:", {
+      message: errMsg,
+      stack: errStack,
+      provider: process.env.GEMINI_API_KEY ? "gemini" : "openai",
+    });
     return NextResponse.json(
       { error: "Failed to generate recommendations. Please try again." },
       { status: 500 }

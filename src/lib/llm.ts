@@ -15,16 +15,61 @@ import { findGameByName } from "./game-api";
 // Falls back to OpenAI GPT-4o if no Gemini key is set
 const useGemini = !!process.env.GEMINI_API_KEY;
 
-const client = new OpenAI(
-  useGemini
-    ? {
-        apiKey: process.env.GEMINI_API_KEY,
-        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-      }
-    : { apiKey: process.env.OPENAI_API_KEY }
-);
+const geminiClient = process.env.GEMINI_API_KEY
+  ? new OpenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    })
+  : null;
 
-const MODEL = useGemini ? "gemini-2.0-flash" : "gpt-4o";
+const openaiClient = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+/** Call LLM with automatic fallback: Gemini → OpenAI */
+async function llmChat(
+  messages: { role: "system" | "user"; content: string }[],
+  opts: { maxTokens?: number; temperature?: number } = {}
+): Promise<string> {
+  const { maxTokens = 8000, temperature = 0.9 } = opts;
+
+  const callProvider = async (
+    client: OpenAI,
+    model: string,
+    label: string
+  ): Promise<string> => {
+    console.log(`[LLM] Calling ${label} (${model})...`);
+    const completion = await client.chat.completions.create({
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      response_format: { type: "json_object" },
+      messages,
+    });
+    const text = completion.choices[0]?.message?.content ?? "";
+    if (!text) throw new Error(`${label} returned empty response`);
+    return text;
+  };
+
+  // Try Gemini first, fall back to OpenAI
+  if (geminiClient) {
+    try {
+      return await callProvider(geminiClient, "gemini-2.0-flash", "Gemini");
+    } catch (err) {
+      console.error("[LLM] Gemini failed, attempting OpenAI fallback:", err);
+      if (openaiClient) {
+        return await callProvider(openaiClient, "gpt-4o", "OpenAI");
+      }
+      throw err; // No fallback available
+    }
+  }
+
+  if (openaiClient) {
+    return await callProvider(openaiClient, "gpt-4o", "OpenAI");
+  }
+
+  throw new Error("No LLM provider configured — set GEMINI_API_KEY or OPENAI_API_KEY");
+}
 
 function buildTasteProfileSummary(profile: TasteProfile): string {
   const sections: string[] = [];
@@ -177,18 +222,13 @@ ${allExcludedTitles.join(", ")}
 
 Give me 12 personalized recommendations based SOLELY on my taste profile and preferences above. Each pick must be justified by specific games I rated or comments I made — not by general popularity. Include at least 4 DISCOVERY picks that are genuine hidden gems most gamers haven't heard of. Return them as a JSON object with a "recommendations" array.`;
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
-    max_tokens: 8000,
-    temperature: 0.9,
-    response_format: { type: "json_object" },
-    messages: [
+  const text = await llmChat(
+    [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-  });
-
-  const text = completion.choices[0]?.message?.content ?? "";
+    { maxTokens: 8000, temperature: 0.9 }
+  );
 
   // Parse structured JSON response
   let raw: Array<{
@@ -417,18 +457,13 @@ ${Array.from(allTitles).join(", ")}
 
 Find 7 games this group can enjoy together. Return as JSON with a "recommendations" array.`;
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
-    max_tokens: 5000,
-    temperature: 0.85,
-    response_format: { type: "json_object" },
-    messages: [
+  const text = await llmChat(
+    [
       { role: "system", content: GROUP_SYSTEM_PROMPT },
       { role: "user", content: userMessage },
     ],
-  });
-
-  const text = completion.choices[0]?.message?.content ?? "";
+    { maxTokens: 5000, temperature: 0.85 }
+  );
 
   let raw: Array<{
     title: string;
