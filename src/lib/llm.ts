@@ -220,7 +220,12 @@ Give me 12 personalized recommendations based on my profile. Include at least 3 
     if (seen.has(keyNorm)) return false;
     // Check exact match or fuzzy substring match against exclusion list
     const isExcluded = allExcludedTitles.includes(key)
-      || excludedNormalized.some((ex) => ex === keyNorm || ex.includes(keyNorm) || keyNorm.includes(ex));
+      || excludedNormalized.some((ex) => {
+        if (ex === keyNorm) return true;
+        const shorter = ex.length <= keyNorm.length ? ex : keyNorm;
+        const longer = ex.length > keyNorm.length ? ex : keyNorm;
+        return shorter.length >= 8 && longer.includes(shorter);
+      });
     if (isExcluded) return false;
     seen.add(keyNorm);
     return true;

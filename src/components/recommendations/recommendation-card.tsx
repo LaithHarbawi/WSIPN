@@ -529,6 +529,14 @@ export function RecommendationCard({
 
 // ── Reusable action button ──
 
+// Static class map so Tailwind JIT can detect every class at build time.
+const ACTION_ACTIVE_STYLES: Record<string, string> = {
+  "accent-primary": "bg-accent-primary/20 text-accent-primary scale-[1.02]",
+  "accent-warm": "bg-accent-warm/20 text-accent-warm scale-[1.02]",
+  "accent-danger": "bg-accent-danger/20 text-accent-danger scale-[1.02]",
+  "accent-success": "bg-accent-success/20 text-accent-success scale-[1.02]",
+};
+
 function ActionButton({
   active,
   activeColor,
@@ -547,7 +555,7 @@ function ActionButton({
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
         active
-          ? `bg-${activeColor}/20 text-${activeColor} scale-[1.02]`
+          ? ACTION_ACTIVE_STYLES[activeColor] ?? ""
           : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary active:scale-95"
       }`}
     >

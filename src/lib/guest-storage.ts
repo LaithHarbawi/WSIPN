@@ -267,4 +267,6 @@ export function exportGuestData() {
 
 export function clearGuestData() {
   Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
+  // Clean up keys managed outside the KEYS map
+  localStorage.removeItem("wsipn_rec_feedback");
 }

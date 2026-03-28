@@ -164,9 +164,13 @@ export async function findGameByName(
     // Find best match — exact or close enough
     const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
     const target = normalize(title);
+    const fuzzySubstring = (a: string, b: string) => {
+      const shorter = a.length <= b.length ? a : b;
+      const longer = a.length > b.length ? a : b;
+      return shorter.length >= 8 && longer.includes(shorter);
+    };
     const match = raw.find((g) => normalize(g.name) === target)
-      ?? raw.find((g) => normalize(g.name).includes(target) || target.includes(normalize(g.name)))
-      ?? raw[0];
+      ?? raw.find((g) => fuzzySubstring(normalize(g.name), target));
 
     if (!match) {
       return { imageUrl: null, screenshotUrl: null, rating: null, verified: false };
@@ -175,8 +179,7 @@ export async function findGameByName(
     // Verify the match is close enough to the requested title
     const matchNorm = normalize(match.name);
     const verified = matchNorm === target
-      || matchNorm.includes(target)
-      || target.includes(matchNorm);
+      || fuzzySubstring(matchNorm, target);
 
     // Use 720p for cover (high res), screenshot_big for backgrounds
     const artworkId = match.artworks?.[0]?.image_id ?? match.screenshots?.[0]?.image_id;

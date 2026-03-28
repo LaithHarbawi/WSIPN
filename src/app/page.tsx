@@ -82,16 +82,18 @@ export default function LandingPage() {
     setUser(null);
   };
 
-  // Check if user has completed onboarding
-  const hasProfile = typeof window !== "undefined" &&
-    (() => {
-      try {
-        const raw = localStorage.getItem("wsipn_taste_profile");
-        if (!raw) return false;
-        const p = JSON.parse(raw);
-        return (p.loved?.length > 0 || p.liked?.length > 0 || p.disliked?.length > 0);
-      } catch { return false; }
-    })();
+  // Check if user has completed onboarding (state-based to avoid SSR hydration mismatch)
+  const [hasProfile, setHasProfile] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("wsipn_taste_profile");
+      if (!raw) return;
+      const p = JSON.parse(raw);
+      if (p.loved?.length > 0 || p.liked?.length > 0 || p.disliked?.length > 0) {
+        setHasProfile(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col overflow-hidden">

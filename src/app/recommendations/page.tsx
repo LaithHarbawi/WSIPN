@@ -42,8 +42,12 @@ export default function RecommendationsPage() {
   const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
   // Titles the user marked "not interested" — persisted across sessions
   const [notInterestedTitles, setNotInterestedTitles] = useState<string[]>([]);
+  // Error state for failed generation
+  const [error, setError] = useState<string | null>(null);
   // Cumulative set of all titles shown across retries (survives re-renders, not state)
   const previouslyShownRef = useRef<Set<string>>(new Set());
+  // Abort controller to cancel stale generation requests and prevent race conditions
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     hydrate();
@@ -83,7 +87,12 @@ export default function RecommendationsPage() {
     const niNorm = niList.map(normalize);
     return recs.filter((r) => {
       const rNorm = normalize(r.title);
-      return !niNorm.some((ni) => ni === rNorm || ni.includes(rNorm) || rNorm.includes(ni));
+      return !niNorm.some((ni) => {
+        if (ni === rNorm) return true;
+        const shorter = ni.length <= rNorm.length ? ni : rNorm;
+        const longer = ni.length > rNorm.length ? ni : rNorm;
+        return shorter.length >= 8 && longer.includes(shorter);
+      });
     });
   }, []);
 
@@ -112,7 +121,13 @@ export default function RecommendationsPage() {
   }, [recommendations]);
 
   const handleRefresh = async () => {
+    // Cancel any in-flight generation request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsGenerating(true);
+    setError(null);
     try {
       const excludedTitles = getExcludedTitles();
       const augmentedPreferences = {
@@ -134,6 +149,7 @@ export default function RecommendationsPage() {
           steamLibraryTitles: getSteamExclusions(),
           notInterestedTitles: guestStorage.getNotInterestedTitles(),
         }),
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
@@ -142,14 +158,20 @@ export default function RecommendationsPage() {
       const prevNorm = [...previouslyShownRef.current].map(normalize);
       const cleaned = filterNotInterested(data.recommendations).filter((r: { title: string }) => {
         const rNorm = normalize(r.title);
-        return !prevNorm.some((p) => p === rNorm || p.includes(rNorm) || rNorm.includes(p));
+        return !prevNorm.some((p) => {
+          if (p === rNorm) return true;
+          const shorter = p.length <= rNorm.length ? p : rNorm;
+          const longer = p.length > rNorm.length ? p : rNorm;
+          return shorter.length >= 8 && longer.includes(shorter);
+        });
       });
       setRecommendations(cleaned);
       saveFeedbackMap({}); // Reset feedback for new recs
-    } catch {
-      // Keep current recommendations on error
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setError("Something went wrong generating recommendations. Please try again.");
     } finally {
-      setIsGenerating(false);
+      if (!controller.signal.aborted) setIsGenerating(false);
     }
   };
 
@@ -195,7 +217,13 @@ export default function RecommendationsPage() {
       const sourceRec = recommendations.find((r) => r.id === recId);
       if (!sourceRec) return;
 
+      // Cancel any in-flight generation request
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setIsGenerating(true);
+      setError(null);
       try {
         const excludedTitles = getExcludedTitles();
         const augmentedPreferences = {
@@ -213,8 +241,9 @@ export default function RecommendationsPage() {
             tasteProfile,
             preferences: augmentedPreferences,
             steamLibraryTitles: getSteamExclusions(),
-          notInterestedTitles: guestStorage.getNotInterestedTitles(),
+            notInterestedTitles: guestStorage.getNotInterestedTitles(),
           }),
+          signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
@@ -224,16 +253,23 @@ export default function RecommendationsPage() {
         const prevNorm = [...previouslyShownRef.current].map(normalize);
         const cleaned = filterNotInterested(data.recommendations).filter((r: { title: string }) => {
           const rNorm = normalize(r.title);
-          if (rNorm === sourceNorm || sourceNorm.includes(rNorm) || rNorm.includes(sourceNorm)) return false;
-          if (prevNorm.some((p) => p === rNorm || p.includes(rNorm) || rNorm.includes(p))) return false;
+          const fuzzyMatch = (a: string, b: string) => {
+            if (a === b) return true;
+            const shorter = a.length <= b.length ? a : b;
+            const longer = a.length > b.length ? a : b;
+            return shorter.length >= 8 && longer.includes(shorter);
+          };
+          if (fuzzyMatch(rNorm, sourceNorm)) return false;
+          if (prevNorm.some((p) => fuzzyMatch(p, rNorm))) return false;
           return true;
         });
         setRecommendations(cleaned);
         saveFeedbackMap({}); // Reset feedback for new recs
-      } catch {
-        // Keep current on error
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setError("Something went wrong generating recommendations. Please try again.");
       } finally {
-        setIsGenerating(false);
+        if (!controller.signal.aborted) setIsGenerating(false);
       }
     }
   };
@@ -292,6 +328,21 @@ export default function RecommendationsPage() {
         {isGenerating ? (
           <div className="max-w-5xl mx-auto px-6">
             <RecommendationSkeleton />
+          </div>
+        ) : error ? (
+          /* Error state */
+          <div className="flex flex-col items-center justify-center py-20 space-y-6 px-6">
+            <div className="w-16 h-16 rounded-2xl bg-accent-danger/10 flex items-center justify-center">
+              <AlertCircle className="h-8 w-8 text-accent-danger" />
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-semibold">Something went wrong</h2>
+              <p className="text-text-secondary max-w-md">{error}</p>
+            </div>
+            <Button onClick={handleRefresh}>
+              <RefreshCw className="h-4 w-4" />
+              Try Again
+            </Button>
           </div>
         ) : !hasResults ? (
           /* Empty state */
