@@ -11,14 +11,14 @@ import type {
 } from "./group-merge";
 import { findGameByName } from "./game-api";
 
-// Use Gemini 2.0 Flash via OpenAI-compatible endpoint (free tier: 15 RPM, 1M TPM)
-// Falls back to OpenAI GPT-4o if no Gemini key is set
-const useGemini = !!process.env.GEMINI_API_KEY;
+// LLM provider chain: Groq (free, fast) → OpenAI (fallback)
+// Groq runs Llama 3.3 70B on custom hardware — free tier: 30 RPM, 15K tokens/min
+// OpenAI GPT-4o used as fallback if Groq is unavailable
 
-const geminiClient = process.env.GEMINI_API_KEY
+const groqClient = process.env.GROQ_API_KEY
   ? new OpenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
     })
   : null;
 
@@ -26,7 +26,7 @@ const openaiClient = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
-/** Call LLM with automatic fallback: Gemini → OpenAI */
+/** Call LLM with automatic fallback: Groq → OpenAI */
 async function llmChat(
   messages: { role: "system" | "user"; content: string }[],
   opts: { maxTokens?: number; temperature?: number } = {}
@@ -51,16 +51,16 @@ async function llmChat(
     return text;
   };
 
-  // Try Gemini first, fall back to OpenAI
-  if (geminiClient) {
+  // Try Groq first (free + fast), fall back to OpenAI
+  if (groqClient) {
     try {
-      return await callProvider(geminiClient, "gemini-2.0-flash", "Gemini");
+      return await callProvider(groqClient, "llama-3.3-70b-versatile", "Groq");
     } catch (err) {
-      console.error("[LLM] Gemini failed, attempting OpenAI fallback:", err);
+      console.error("[LLM] Groq failed, attempting OpenAI fallback:", err);
       if (openaiClient) {
         return await callProvider(openaiClient, "gpt-4o", "OpenAI");
       }
-      throw err; // No fallback available
+      throw err;
     }
   }
 
@@ -68,7 +68,7 @@ async function llmChat(
     return await callProvider(openaiClient, "gpt-4o", "OpenAI");
   }
 
-  throw new Error("No LLM provider configured — set GEMINI_API_KEY or OPENAI_API_KEY");
+  throw new Error("No LLM provider configured — set GROQ_API_KEY or OPENAI_API_KEY");
 }
 
 function buildTasteProfileSummary(profile: TasteProfile): string {
