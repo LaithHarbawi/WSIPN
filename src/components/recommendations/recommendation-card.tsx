@@ -155,19 +155,6 @@ export function RecommendationCard({
               {rec.year && (
                 <span className="text-sm text-white/70">{rec.year}</span>
               )}
-              {rec.metacritic && (
-                <span
-                  className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                    rec.metacritic >= 75
-                      ? "bg-accent-success/20 text-accent-success"
-                      : rec.metacritic >= 50
-                      ? "bg-accent-warm/20 text-accent-warm"
-                      : "bg-accent-danger/20 text-accent-danger"
-                  }`}
-                >
-                  {rec.metacritic}
-                </span>
-              )}
               {rec.confidence && (
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full border ${getConfidenceStyle(rec.confidence)}`}
@@ -391,19 +378,6 @@ export function RecommendationCard({
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 {rec.year && (
                   <span className="text-xs text-text-muted">{rec.year}</span>
-                )}
-                {rec.metacritic && (
-                  <span
-                    className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${
-                      rec.metacritic >= 75
-                        ? "bg-accent-success/15 text-accent-success"
-                        : rec.metacritic >= 50
-                        ? "bg-accent-warm/15 text-accent-warm"
-                        : "bg-accent-danger/15 text-accent-danger"
-                    }`}
-                  >
-                    {rec.metacritic}
-                  </span>
                 )}
                 {rec.confidence && (
                   <span

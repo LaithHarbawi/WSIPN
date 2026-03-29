@@ -528,20 +528,6 @@ export default function RecommendationsPage() {
                           <span>{heroRec.genres.slice(0, 3).join(", ")}</span>
                         </>
                       ) : null}
-                      {heroRec.metacritic && (
-                        <>
-                          <span className="opacity-40">|</span>
-                          <span className={
-                            heroRec.metacritic >= 75
-                              ? "text-accent-success font-semibold"
-                              : heroRec.metacritic >= 50
-                              ? "text-accent-warm font-semibold"
-                              : "text-accent-danger font-semibold"
-                          }>
-                            {heroRec.metacritic} Metacritic
-                          </span>
-                        </>
-                      )}
                     </div>
 
                     {/* Explanation */}
