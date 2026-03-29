@@ -38,22 +38,12 @@ function encodeGameTitle(title: string): string {
   return encodeURIComponent(title.replace(/[^\w\s-]/g, "").trim());
 }
 
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .trim();
-}
-
 export function generateStoreLinks(
   title: string,
   platforms?: string[]
 ): StoreLink[] {
   const links: StoreLink[] = [];
   const encoded = encodeGameTitle(title);
-  const slug = slugify(title);
   const platformSet = new Set(
     (platforms ?? []).map((p) => p.toLowerCase())
   );

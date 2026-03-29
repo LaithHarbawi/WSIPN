@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { fetchUserData } from "@/lib/supabase-storage";
 import {
   Sparkles,
   ArrowRight,
@@ -47,7 +49,14 @@ function GameTile({ title, img, sentiment, delay }: {
       className="relative group rounded-xl overflow-hidden shadow-lg animate-fade-in-up flex-shrink-0 w-[120px]"
       style={{ animationDelay: delay }}
     >
-      <img src={img} alt={title} className="w-full aspect-[3/4] object-cover" loading="lazy" />
+      <Image
+        src={img}
+        alt={title}
+        width={120}
+        height={160}
+        sizes="120px"
+        className="w-full aspect-[3/4] object-cover"
+      />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
       <div className="absolute bottom-0 left-0 right-0 p-2">
         <p className="text-[10px] font-semibold text-white/90 truncate leading-tight">{title}</p>
@@ -62,38 +71,62 @@ function GameTile({ title, img, sentiment, delay }: {
 export default function LandingPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ name: string | null; id: string } | null>(null);
+  const [hasProfile, setHasProfile] = useState(false);
 
   useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    let active = true;
+
+    try {
+      const raw = localStorage.getItem("wsipn_taste_profile");
+      if (raw) {
+        const profile = JSON.parse(raw);
+        if (profile.loved?.length > 0 || profile.liked?.length > 0 || profile.disliked?.length > 0) {
+          setHasProfile(true);
+        }
+      }
+    } catch {
+      // Ignore malformed local data and fall back to remote state when available.
+    }
+
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      return () => {
+        active = false;
+      };
+    }
+
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) {
         setUser({
           name: data.user.user_metadata?.display_name ?? data.user.email?.split("@")[0] ?? null,
           id: data.user.id,
         });
+
+        const remoteData = await fetchUserData(data.user.id);
+        const remoteProfile = remoteData?.taste_profile ?? { loved: [], liked: [], disliked: [] };
+        const remoteHasGames =
+          (remoteProfile.loved?.length ?? 0) +
+          (remoteProfile.liked?.length ?? 0) +
+          (remoteProfile.disliked?.length ?? 0) > 0;
+        const remoteCompleted = (remoteData?.onboarding_step ?? 0) >= 3;
+
+        if (active && (remoteHasGames || remoteCompleted)) {
+          setHasProfile(true);
+        }
       }
     });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleSignOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
     setUser(null);
+    setHasProfile(false);
   };
-
-  // Check if user has completed onboarding (state-based to avoid SSR hydration mismatch)
-  const [hasProfile, setHasProfile] = useState(false);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("wsipn_taste_profile");
-      if (!raw) return;
-      const p = JSON.parse(raw);
-      if (p.loved?.length > 0 || p.liked?.length > 0 || p.disliked?.length > 0) {
-        setHasProfile(true);
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   return (
     <div className="min-h-screen flex flex-col overflow-hidden">
@@ -308,7 +341,14 @@ export default function LandingPage() {
                     { title: "Balan Wonderworld", img: SHOWCASE_GAMES[6].img, sentiment: "disliked" as const },
                   ].map((g) => (
                     <div key={g.title} className="flex items-center gap-3">
-                      <img src={g.img} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                      <Image
+                        src={g.img}
+                        alt=""
+                        width={40}
+                        height={40}
+                        sizes="40px"
+                        className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                      />
                       <span className="text-sm font-medium flex-1 truncate">{g.title}</span>
                       <div className={`p-1.5 rounded-lg ${
                         g.sentiment === "loved" ? "bg-loved/15 text-loved" :
@@ -389,10 +429,12 @@ export default function LandingPage() {
               <div className="flex-shrink-0 order-1 sm:order-2 w-full sm:w-[320px]">
                 <div className="rounded-2xl border border-border-subtle bg-bg-card/60 overflow-hidden shadow-card">
                   <div className="relative h-36">
-                    <img
+                    <Image
                       src="https://images.igdb.com/igdb/image/upload/t_screenshot_big/sc8g11.jpg"
                       alt=""
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="(max-width: 640px) 100vw, 320px"
+                      className="object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-bg-card/95 via-bg-card/30 to-transparent" />
                     <div className="absolute bottom-3 left-4 right-4">

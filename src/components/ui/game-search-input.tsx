@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, Plus, Loader2 } from "lucide-react";
 import type { GameSearchResult } from "@/lib/types";
@@ -14,9 +15,14 @@ interface GameSearchInputProps {
     released?: string;
   }) => void;
   placeholder?: string;
+  label?: string;
 }
 
-export function GameSearchInput({ onSelect, placeholder = "Search for a game..." }: GameSearchInputProps) {
+export function GameSearchInput({
+  onSelect,
+  placeholder = "Search for a game...",
+  label = "Search for a game",
+}: GameSearchInputProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GameSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -26,6 +32,8 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
   const dropdownRef = useRef<HTMLDivElement>(null);
   const highlightedRef = useRef<HTMLButtonElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const listboxId = useRef(`game-search-results-${Math.random().toString(36).slice(2)}`);
+  const inputId = useRef(`game-search-input-${Math.random().toString(36).slice(2)}`);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -156,9 +164,13 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
 
   return (
     <div className="relative">
+      <label htmlFor={inputId.current} className="sr-only">
+        {label}
+      </label>
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
         <input
+          id={inputId.current}
           ref={inputRef}
           type="text"
           value={query}
@@ -169,6 +181,15 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={isOpen && query.length >= 2}
+          aria-controls={listboxId.current}
+          aria-activedescendant={
+            isOpen && totalItems > 0
+              ? `${listboxId.current}-option-${highlightedIndex}`
+              : undefined
+          }
           className="w-full pl-10 pr-4 py-3 rounded-xl bg-bg-input border border-border-subtle text-sm text-text-primary placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent-primary/30 focus:border-accent-primary/50 transition-all duration-200"
         />
         {isSearching && (
@@ -179,14 +200,20 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
       {isOpen && query.length >= 2 && (
         <div
           ref={dropdownRef}
+          id={listboxId.current}
+          role="listbox"
+          aria-label="Game search results"
           className="absolute z-50 w-full mt-1.5 rounded-2xl bg-bg-secondary border border-border-subtle shadow-elevated overflow-hidden max-h-80 overflow-y-auto scrollbar-hide"
         >
           {results.map((game, index) => (
             <button
               key={game.id}
+              id={`${listboxId.current}-option-${index}`}
               ref={index === highlightedIndex ? highlightedRef : undefined}
               onClick={() => selectGame(game)}
               onMouseEnter={() => setHighlightedIndex(index)}
+              role="option"
+              aria-selected={index === highlightedIndex}
               className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 text-left ${
                 index === highlightedIndex
                   ? "bg-bg-tertiary/80"
@@ -194,9 +221,12 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
               }`}
             >
               {game.background_image ? (
-                <img
+                <Image
                   src={game.background_image}
                   alt=""
+                  width={44}
+                  height={44}
+                  sizes="44px"
                   className="w-11 h-11 rounded-lg object-cover flex-shrink-0 bg-bg-tertiary"
                 />
               ) : (
@@ -219,9 +249,12 @@ export function GameSearchInput({ onSelect, placeholder = "Search for a game..."
           {/* Manual entry option */}
           {query.trim() && (
             <button
+              id={`${listboxId.current}-option-${results.length}`}
               ref={highlightedIndex === results.length ? highlightedRef : undefined}
               onClick={addManualEntry}
               onMouseEnter={() => setHighlightedIndex(results.length)}
+              role="option"
+              aria-selected={highlightedIndex === results.length}
               className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 text-left border-t border-border-subtle/60 ${
                 highlightedIndex === results.length
                   ? "bg-bg-tertiary/80"

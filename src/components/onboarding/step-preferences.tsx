@@ -13,6 +13,7 @@ import {
   Clock,
   Monitor,
   MessageSquare,
+  Shuffle,
 } from "lucide-react";
 import {
   GENRE_OPTIONS,
@@ -236,6 +237,72 @@ export function StepPreferences() {
           onChange={(v) => updatePreference("playerMode", v)}
           index={4}
         />
+
+        <div
+          className="group space-y-4 opacity-0 animate-[fadeSlideIn_0.5s_ease-out_forwards]"
+          style={{ animationDelay: `${5 * 60}ms` }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full bg-accent-primary/10 border border-accent-primary/20 shadow-sm shadow-accent-primary/5">
+              <Shuffle className="h-4 w-4 text-accent-primary" />
+            </div>
+            <div className="space-y-0.5 pt-1">
+              <h3 className="text-sm font-bold text-text-primary tracking-tight">
+                Cross-play compatibility
+              </h3>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Prefer multiplayer games that let people on different platforms play together.
+              </p>
+            </div>
+          </div>
+          <div className="pl-12">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={preferences.crossplayCompatible}
+              onClick={() =>
+                updatePreference(
+                  "crossplayCompatible",
+                  !preferences.crossplayCompatible
+                )
+              }
+              className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-all ${
+                preferences.crossplayCompatible
+                  ? "border-accent-primary/35 bg-accent-primary/10 shadow-sm shadow-accent-primary/10"
+                  : "border-border-subtle/60 bg-bg-tertiary/40 hover:border-border-medium hover:bg-bg-tertiary/60"
+              }`}
+            >
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-text-primary">
+                  {preferences.crossplayCompatible
+                    ? "Cross-play preferred"
+                    : "No cross-play preference"}
+                </p>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  {preferences.crossplayCompatible
+                    ? "We’ll favor games with cross-platform multiplayer and call out whether support is full, partial, or ecosystem-limited."
+                    : "We’ll recommend the best match overall, whether multiplayer is platform-specific or not."}
+                </p>
+              </div>
+              <span
+                aria-hidden="true"
+                className={`relative ml-4 inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                  preferences.crossplayCompatible
+                    ? "bg-accent-primary"
+                    : "bg-bg-card-hover"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                    preferences.crossplayCompatible
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+        </div>
 
         {/* Divider */}
         <div className="border-t border-border-subtle/60 mx-12" />

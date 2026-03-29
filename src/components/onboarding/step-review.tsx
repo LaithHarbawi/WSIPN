@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ export function StepReview() {
     tasteProfile,
     preferences,
     setOnboardingStep,
+    addSession,
+    isGenerating,
     setIsGenerating,
     setRecommendations,
   } = useAppStore();
@@ -41,7 +44,6 @@ export function StepReview() {
   const generateRecs = async () => {
     setGenError(null);
     setIsGenerating(true);
-    router.push("/recommendations");
 
     // Get Steam library games with 5+ hours to exclude from recommendations
     const steamProfile = guestStorage.getSteamProfile();
@@ -56,7 +58,10 @@ export function StepReview() {
       const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
       const cooldownTitles = guestStorage.getCooldownTitles(prefHash);
       const allNotInterested = guestStorage.getNotInterestedTitles();
-      const excludeList = [...new Set([...allNotInterested, ...cooldownTitles])];
+      const allAlreadyPlayed = guestStorage.getAlreadyPlayedTitles();
+      const excludeList = [
+        ...new Set([...allNotInterested, ...allAlreadyPlayed, ...cooldownTitles]),
+      ];
 
       const res = await fetch("/api/recommendations/generate", {
         method: "POST",
@@ -69,8 +74,14 @@ export function StepReview() {
         }),
       });
 
-      if (!res.ok) throw new Error("Generation failed");
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to generate recommendations. Please try again."
+        );
+      }
 
       // Hard filter: strip any excluded games the LLM returned anyway
       const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -87,15 +98,32 @@ export function StepReview() {
           })
         : data.recommendations;
 
+      if (!Array.isArray(filtered) || filtered.length === 0) {
+        throw new Error(
+          "We couldn't verify enough recommendations this time. Please try again for another batch."
+        );
+      }
+
       // Save recommended titles to cooldown history
       guestStorage.addToRecHistory(
         filtered.map((r: { title: string }) => r.title),
         prefHash
       );
+      addSession({
+        id: `session-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        createdAt: new Date().toISOString(),
+        preferences,
+        recommendations: filtered,
+      });
       setRecommendations(filtered);
+      router.push("/recommendations");
     } catch (error) {
       console.error("Failed to generate recommendations:", error);
-      setGenError("Failed to generate recommendations. Please try again.");
+      setGenError(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate recommendations. Please try again."
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -112,6 +140,10 @@ export function StepReview() {
     { label: "Difficulty", value: preferences.difficulty },
     { label: "Length", value: preferences.gameLength },
     { label: "Player Mode", value: preferences.playerMode },
+    {
+      label: "Cross-play",
+      value: preferences.crossplayCompatible ? "Preferred" : "",
+    },
     { label: "Era", value: preferences.era },
     { label: "Session Time", value: preferences.timeCommitment },
     { label: "Platforms", value: preferences.platforms?.length ? preferences.platforms.join(", ") : "" },
@@ -138,8 +170,9 @@ export function StepReview() {
           Ready to discover?
         </h2>
         <p className="text-text-secondary max-w-md mx-auto leading-relaxed">
-          Here&apos;s a summary of your taste profile and preferences.
-          Let&apos;s find your next favorite game.
+          {totalGames > 0
+            ? "Here's a summary of your taste profile and preferences. Let's find your next favorite game."
+            : "You skipped rating games, so we'll use your current preferences and notes to generate broader recommendations. You can always add games later to improve accuracy."}
         </p>
       </div>
 
@@ -186,9 +219,12 @@ export function StepReview() {
                       className="flex items-center gap-3 p-2 rounded-xl bg-bg-tertiary/50 hover:bg-bg-tertiary/80 transition-colors"
                     >
                       {g.imageUrl ? (
-                        <img
+                        <Image
                           src={g.imageUrl}
                           alt=""
+                          width={32}
+                          height={32}
+                          sizes="32px"
                           className="w-8 h-8 rounded-lg object-cover shadow-sm flex-shrink-0"
                         />
                       ) : (
@@ -310,6 +346,7 @@ export function StepReview() {
         <Button
           size="xl"
           onClick={generateRecs}
+          loading={isGenerating}
           className="glow-sm w-full sm:w-auto min-w-[280px]"
         >
           <Sparkles className="h-5 w-5" />
