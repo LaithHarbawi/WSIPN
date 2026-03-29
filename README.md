@@ -1,26 +1,71 @@
 # What Should I Play Next? (WSIPN)
 
-Personalized game recommendation engine that understands *why* you play — not just what you play.
+WSIPN is a Next.js app for game recommendations that tries to understand taste, not just popularity. Users build a taste profile from games they loved, liked, or disliked, add optional notes about why, set their current session preferences, and get AI-generated recommendations with explanations.
 
-## Overview
+## Current product scope
 
-WSIPN helps users discover video games they'll genuinely enjoy by combining a structured taste profile with intelligent recommendation reasoning. Users build a profile of games they loved, liked, disliked, or didn't finish, add optional comments explaining why, then describe their current mood and preferences. The system analyzes patterns in their taste to deliver personalized, explained recommendations.
+- Solo onboarding and recommendation flow
+- Guest mode with browser persistence
+- Authenticated mode with Supabase-backed sync
+- Steam library import for faster profile setup
+- Group recommendation flow for multiple participants
+- Dashboard with taste profile editing, saved games, and session history
+- Feedback actions:
+  `Play Later`, `Not Interested`, `Already Played`, `More Like This`
 
-## Tech Stack
+## Tech stack
 
-- **Frontend**: Next.js 15 (App Router), TypeScript, Tailwind CSS v4
-- **State Management**: Zustand
-- **Auth & Database**: Supabase
-- **Game Data**: IGDB (via Twitch API)
-- **Recommendations**: OpenAI GPT-4o
-- **Icons**: Lucide React
+- Next.js 15 App Router
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- Zustand for client state
+- Supabase for auth and persisted user data
+- IGDB/Twitch for game search and image enrichment
+- OpenAI as the primary recommendation provider
+- Groq as the fallback provider
 
-## Getting Started
+## Recommendation model
 
-### Prerequisites
+The app currently aims to return a 12-game batch:
 
-- Node.js 18+
-- npm or yarn
+- 5 `primary`
+- 4 `discovery`
+- 2 `wildcard`
+- 1 `safe_pick` or `surprise` slot each, depending on the batch
+
+The server normalizes provider output into the supported UI types:
+
+- `primary`
+- `discovery`
+- `wildcard`
+- `safe_pick`
+- `surprise`
+
+## Persistence model
+
+Guest users store data in local storage.
+
+Authenticated users currently use a hybrid Supabase model:
+
+- normalized tables for durable taste-profile data via `game_entries`
+- normalized table for current preferences and onboarding state via `user_settings`
+- normalized tables for durable domain data like `saved_games`
+- normalized tables for recommendation history via `recommendation_sessions` and `recommendation_results`
+- normalized tables for durable per-title feedback via `user_title_feedback`
+- `user_data` as a fast mirror for hydrate/session continuity
+
+The `user_data` mirror still carries:
+
+- current recommendations
+- `not interested` titles
+- `already played` titles
+- Steam profile import data
+- onboarding step
+
+The repo still contains additional normalized tables that are not yet the primary runtime path for all features.
+
+## Getting started
 
 ### 1. Install dependencies
 
@@ -28,39 +73,38 @@ WSIPN helps users discover video games they'll genuinely enjoy by combining a st
 npm install
 ```
 
-### 2. Set up environment variables
+### 2. Configure environment variables
 
-Copy `.env.example` to `.env.local` and fill in your keys:
+Copy `.env.example` to `.env.local` and fill in the values you need.
 
 ```bash
 cp .env.example .env.local
 ```
 
-You'll need:
+Important variables:
 
-| Variable | Source | Required |
-|----------|--------|----------|
-| `NEXT_PUBLIC_SUPABASE_URL` | [Supabase Dashboard](https://supabase.com/dashboard) | For auth/DB features |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API | For auth/DB features |
-| `TWITCH_CLIENT_ID` | [Twitch Developer Console](https://dev.twitch.tv/console/apps) | For game search/autocomplete |
-| `TWITCH_CLIENT_SECRET` | Twitch Developer Console → Manage App | For game search/autocomplete |
-| `OPENAI_API_KEY` | [OpenAI Platform](https://platform.openai.com/api-keys) | For recommendations |
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `TWITCH_CLIENT_ID`
+- `TWITCH_CLIENT_SECRET`
+- `STEAM_API_KEY`
+- `OPENAI_API_KEY`
+- `GROQ_API_KEY`
 
-### 3. Set up IGDB access
+### 3. Apply the Supabase schema
 
-1. Go to [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps)
-2. Log in with your Twitch account (create one if needed)
-3. Click **Register Your Application**
-4. Set a name (e.g. "WSIPN"), OAuth redirect to `http://localhost`, category to **Application Integration**
-5. Click **Create**, then **Manage** on your new app
-6. Copy the **Client ID** → `TWITCH_CLIENT_ID`
-7. Click **New Secret**, copy the secret → `TWITCH_CLIENT_SECRET`
+Run the SQL in [supabase/schema.sql](/C:/Users/rholm/Desktop/WSIPN/supabase/schema.sql) or apply the migration in [supabase/migrations/001_add_user_data.sql](/C:/Users/rholm/Desktop/WSIPN/supabase/migrations/001_add_user_data.sql).
 
-### 4. Set up Supabase (optional for guest mode)
+Important: the latest schema includes:
 
-Run the SQL in `supabase/schema.sql` in your Supabase SQL Editor to create all tables, RLS policies, and triggers.
+- `user_data` JSONB sync fields for saved/ignored/already-played state
+- normalized recommendation history tables used by authenticated session persistence
+- a durable `rate_limits` table and `check_rate_limit(...)` function used by the recommendation API
 
-### 5. Run the dev server
+If that SQL is not applied, the app still works, but authenticated feedback sync and durable server-side rate limiting will not be fully active.
+
+### 4. Start the app
 
 ```bash
 npm run dev
@@ -68,71 +112,62 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Features
+## Useful scripts
 
-### Guest Mode
-- Full functionality without an account
-- Data persists in browser localStorage
-- Can migrate to an account later
-
-### Taste Profile Builder
-- Four categories: Loved, Liked, Disliked, Didn't Finish
-- Game search with IGDB autocomplete
-- Manual entry for any game
-- Optional comments, platform, and hours played per game
-
-### Current Mood Preferences
-- Genres, mood/vibe, difficulty, game length
-- Player mode, indie/AAA scope, era preference
-- Session time commitment, platform
-- Broad preferences — the system uses them as guidance, not hard filters
-
-### Recommendations
-- 5 primary picks, 2 wildcards, 1 safe pick, 1 surprise
-- Each recommendation includes:
-  - Personalized explanation
-  - "Why this matches you"
-  - "Possible risk"
-  - Confidence level
-  - Cover art and metadata
-- Feedback actions: Save, Not Interested, Already Played, More Like This
-- Refresh for different recommendations
-
-### Dashboard
-- Edit taste profile
-- View saved "Play Later" games
-- Browse recommendation history
-- Re-run previous sessions
-
-## Project Structure
-
+```bash
+npm run dev
+npm run build
+npm run lint
+npx tsc --noEmit
 ```
+
+Note: `npx tsc --noEmit` depends on generated `.next/types` in this repo, so run it after a build if it complains about missing `.next/types/*`.
+
+## Main flows
+
+### Solo flow
+
+1. Build a taste profile from `Loved`, `Liked`, and `Disliked`
+2. Set current mood and session preferences
+3. Generate recommendations
+4. Save, dismiss, mark played, or request `More Like This`
+5. Reopen past sessions from the dashboard
+
+### Group flow
+
+1. Add multiple participants
+2. Add or import games for each participant
+3. Merge group taste and preferences
+4. Generate compromise-friendly recommendations
+
+## Project structure
+
+```text
 src/
-├── app/                    # Next.js App Router pages
-│   ├── api/               # API routes (game search, recommendations)
-│   ├── auth/              # Sign in, sign up, callback
-│   ├── dashboard/         # User dashboard
-│   ├── onboarding/        # Multi-step onboarding wizard
-│   └── recommendations/   # Results page
-├── components/
-│   ├── ui/                # Reusable UI components
-│   ├── onboarding/        # Onboarding step components
-│   └── recommendations/   # Recommendation cards
-├── contexts/              # Zustand store
-└── lib/
-    ├── supabase/          # Supabase client setup
-    ├── game-api.ts        # IGDB API integration
-    ├── guest-storage.ts   # localStorage guest mode
-    ├── llm.ts             # OpenAI integration
-    └── types.ts           # TypeScript types
+  app/
+    api/
+    auth/
+    dashboard/
+    group/
+    onboarding/
+    recommendations/
+  components/
+    group/
+    onboarding/
+    recommendations/
+    ui/
+  contexts/
+  lib/
+    supabase/
+supabase/
+  migrations/
+  schema.sql
 ```
 
-## Data Model
+## Current caveats
 
-See `supabase/schema.sql` for the full schema including:
-- `profiles` — user profiles
-- `game_entries` — taste profile games with sentiment + comments
-- `recommendation_sessions` — recommendation request history
-- `recommendation_results` — individual recommendations
-- `recommendation_feedback` — user feedback on recommendations
-- `saved_games` — play later list
+- `npm run lint` is now working, but it only helps if the team keeps it in the workflow.
+- The app now uses a hybrid Supabase model. `saved_games`, `user_title_feedback`, and normalized recommendation history are primary authenticated stores, while `user_data` remains a fast mirror for hydrate and compatibility.
+- Recommendation quality depends on external provider output and IGDB verification.
+- Steam import requires a public Steam profile.
+- The recommendation API now has a durable Supabase-backed limiter, but the matching SQL must exist in the target Supabase project.

@@ -55,6 +55,7 @@ export interface CurrentPreferences {
   difficulty: Difficulty;
   gameLength: GameLength;
   playerMode: PlayerMode;
+  crossplayCompatible: boolean;
   era: Era;
   timeCommitment: TimeCommitment;
   platforms: string[];

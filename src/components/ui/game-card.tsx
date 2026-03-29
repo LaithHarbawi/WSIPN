@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import {
   X,
@@ -47,9 +48,12 @@ export function GameCard({ entry, onUpdate, onRemove, startExpanded }: GameCardP
       <div className="flex items-center gap-3 p-3 pr-2">
         {/* Image */}
         {entry.imageUrl ? (
-          <img
+          <Image
             src={entry.imageUrl}
             alt=""
+            width={40}
+            height={40}
+            sizes="40px"
             className="w-10 h-10 rounded-lg object-cover flex-shrink-0 bg-bg-tertiary"
           />
         ) : (

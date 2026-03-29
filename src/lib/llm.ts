@@ -24,6 +24,31 @@ const groqClient = process.env.GROQ_API_KEY
     })
   : null;
 
+function normalizeRecommendationType(rawType?: string): Recommendation["type"] {
+  const normalized = rawType?.trim().toLowerCase().replace(/[\s-]+/g, "_") ?? "";
+
+  switch (normalized) {
+    case "primary":
+    case "top_pick":
+      return "primary";
+    case "discovery":
+    case "hidden_gem":
+    case "hidden_gems":
+      return "discovery";
+    case "wildcard":
+    case "wild_card":
+      return "wildcard";
+    case "safe_pick":
+    case "safepick":
+    case "safe":
+      return "safe_pick";
+    case "surprise":
+      return "surprise";
+    default:
+      return "primary";
+  }
+}
+
 /** Call LLM with automatic fallback: OpenAI → Groq */
 async function llmChat(
   messages: { role: "system" | "user"; content: string }[],
@@ -95,7 +120,7 @@ function buildTasteProfileSummary(profile: TasteProfile): string {
     sections.push(`DISLIKED:\n${formatEntries(profile.disliked)}`);
   }
 
-  return sections.join("\n\n");
+  return sections.join("\n\n") || "No rated games provided yet. Base recommendations on current preferences and any global notes.";
 }
 
 function buildPreferencesSummary(prefs: CurrentPreferences): string {
@@ -110,6 +135,11 @@ function buildPreferencesSummary(prefs: CurrentPreferences): string {
     } else {
       lines.push(`Player Mode: ${prefs.playerMode}`);
     }
+  }
+  if (prefs.crossplayCompatible) {
+    lines.push(
+      `Cross-play: Prefer games with cross-platform multiplayer support when multiplayer is relevant. If a recommendation supports cross-play, explicitly state whether it offers full cross-play, partial cross-play, or ecosystem-limited cross-play.`
+    );
   }
   if (prefs.era !== "Any era") lines.push(`Era: ${prefs.era}`);
   if (prefs.timeCommitment !== "Varies / No preference")
@@ -139,6 +169,7 @@ Games like Deep Rock Galactic, Stardew Valley, Hollow Knight, Celeste, Hades, Di
 4. **Loved games + playtime data** — High-hour games reveal lifestyle preferences.
 5. **Liked games** — Secondary positive signal.
 6. **Session preferences** (genres, mood, difficulty, etc.) — Act as filters on top of taste.
+7. **If no rated games are provided** — Fall back gracefully to current preferences and global notes. Recommendations will be broader, but they must still be concrete, useful, and based on the player's stated mood, platforms, and constraints.
 
 ## REALITY RULE — Only Real Games
 CRITICAL: Every game you recommend MUST be a real, commercially released video game that can be purchased or downloaded. NEVER invent, fabricate, or hallucinate game titles. If you are not certain a game exists, do not recommend it. Stick to games you are confident are real.
@@ -187,7 +218,8 @@ Before generating recommendations, internally analyze:
 - SURPRISE: A left-field recommendation that challenges assumptions.
 - Each recommendation object must have: title, type, explanation, whyMatches, possibleRisk, confidence, genres, platforms, year.
 - "explanation" (2-3 sentences): Reference SPECIFIC mechanics, systems, or design elements from the user's games. Never make vague thematic comparisons.
-- "whyMatches" (1-2 sentences): Cite the SPECIFIC game(s) from the user's profile and the concrete shared mechanics or structure. Must reference at least one game the user rated.
+- If the player prefers cross-play compatibility and the recommendation is multiplayer/co-op/social, the explanation MUST explicitly state the type of cross-play support when known: full cross-play, partial cross-play, or ecosystem-limited/platform-specific cross-play.
+- "whyMatches" (1-2 sentences): Cite the SPECIFIC game(s) from the user's profile and the concrete shared mechanics or structure when rated games are available. If no rated games were provided, explain the match using the user's stated preferences, mood, platforms, and global notes instead.
 - "possibleRisk" (1 sentence): Ground in their specific dislikes or drops if applicable. Otherwise note a genuine potential friction point.
 - "confidence": "High" | "Medium" | "Likely"
 - Never recommend a game the user has already entered or that appears in their Steam library.
@@ -207,6 +239,7 @@ export async function generateRecommendations(
   // Merge steam library titles (5+ hours) into exclusion list
   const steamExclusions = (steamLibraryTitles ?? []).map((t) => t.toLowerCase());
   const allExcludedTitles = [...new Set([...allEnteredTitles, ...steamExclusions])];
+  const hasRatedGames = allEnteredTitles.length > 0;
 
   const userMessage = `## My Taste Profile
 ${buildTasteProfileSummary(profile)}
@@ -216,9 +249,13 @@ ${buildPreferencesSummary(preferences)}
 ${buildGlobalComment(preferences)}
 
 ## Games to NEVER recommend (I already own/played these):
-${allExcludedTitles.join(", ")}
+${allExcludedTitles.join(", ") || "None provided."}
 
-Give me 12 personalized recommendations based SOLELY on my taste profile and preferences above. Each pick must be justified by specific games I rated or comments I made — not by general popularity. Include at least 4 DISCOVERY picks that are genuine hidden gems most gamers haven't heard of. Return them as a JSON object with a "recommendations" array.`;
+Give me 12 personalized recommendations based SOLELY on the information above. ${
+  hasRatedGames
+    ? "Each pick must be justified by specific games I rated or comments I made — not by general popularity."
+    : "I skipped rating games, so use my current preferences, platforms, and global notes to make the best possible recommendations without inventing taste signals."
+} Include at least 4 DISCOVERY picks that are genuine hidden gems most gamers haven't heard of. Return them as a JSON object with a "recommendations" array.`;
 
   const text = await llmChat(
     [
@@ -283,7 +320,7 @@ Give me 12 personalized recommendations based SOLELY on my taste profile and pre
   return filtered.map((r, i) => ({
     id: `rec-${Date.now()}-${i}`,
     title: r.title,
-    type: r.type.toLowerCase() as Recommendation["type"],
+    type: normalizeRecommendationType(r.type),
     explanation: r.explanation,
     whyMatches: r.whyMatches,
     possibleRisk: r.possibleRisk,
@@ -346,10 +383,10 @@ export async function enrichWithImages(
   });
 
   // ── Rebalance: ensure we have enough genuine discoveries ──
-  // After reclassification, check if we still have 3+ discoveries.
+  // After reclassification, check if we still have 4+ discoveries.
   // If not, demote the least-popular primary/wildcard picks to fill the gap.
   const discoveries = enforced.filter((r) => r.type === "discovery");
-  const MIN_DISCOVERIES = 3;
+  const MIN_DISCOVERIES = 4;
 
   if (discoveries.length < MIN_DISCOVERIES) {
     const needed = MIN_DISCOVERIES - discoveries.length;

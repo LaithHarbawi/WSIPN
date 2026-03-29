@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useMemo } from "react";
 import {
   Bookmark,
@@ -16,6 +17,7 @@ import {
   ExternalLink,
   ShoppingCart,
   Compass,
+  Shuffle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { generateStoreLinks, type StoreLink } from "@/lib/affiliate";
@@ -73,6 +75,14 @@ function getConfidenceStyle(confidence?: string): string {
   return CONFIDENCE_COLORS[key] ?? "bg-accent-primary/15 text-accent-primary border-accent-primary/20";
 }
 
+function extractCrossplayNote(explanation: string): string | null {
+  const sentenceMatch = explanation.match(
+    /([^.!?]*cross-?play[^.!?]*[.!?]?)/i
+  );
+
+  return sentenceMatch?.[1]?.trim() ?? null;
+}
+
 interface RecommendationCardProps {
   recommendation: Recommendation;
   featured?: boolean;
@@ -89,6 +99,8 @@ export function RecommendationCard({
   const [expanded, setExpanded] = useState(featured ?? false);
   const feedbackGiven = activeFeedback ?? null;
   const meta = TYPE_META[rec.type];
+  const detailsId = `recommendation-details-${rec.id}`;
+  const crossplayNote = extractCrossplayNote(rec.explanation);
 
   const storeLinks = useMemo(
     () => generateStoreLinks(rec.title, rec.platforms),
@@ -111,10 +123,12 @@ export function RecommendationCard({
         {/* Hero banner — 16:9 screenshot */}
         <div className="relative aspect-video w-full overflow-hidden">
           {heroImage ? (
-            <img
+            <Image
               src={heroImage}
               alt={rec.title}
-              className="w-full h-full object-cover"
+              fill
+              sizes="(max-width: 768px) 100vw, 896px"
+              className="object-cover"
             />
           ) : (
             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -189,6 +203,9 @@ export function RecommendationCard({
           {/* Expand toggle */}
           <button
             onClick={() => setExpanded(!expanded)}
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
             className="flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
           >
             {expanded ? (
@@ -206,6 +223,7 @@ export function RecommendationCard({
 
           {/* Expanded details */}
           <div
+            id={detailsId}
             className={`grid transition-all duration-300 ease-in-out ${
               expanded
                 ? "grid-rows-[1fr] opacity-100"
@@ -248,6 +266,18 @@ export function RecommendationCard({
                   </div>
                 ) : null}
 
+                {crossplayNote ? (
+                  <div className="flex items-start gap-2 text-xs text-text-muted">
+                    <Shuffle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent-primary" />
+                    <div>
+                      <span className="font-medium text-text-secondary">
+                        Cross-play:
+                      </span>{" "}
+                      <span>{crossplayNote}</span>
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Store links */}
                 {storeLinks.length > 0 && (
                   <div className="pt-2">
@@ -282,7 +312,7 @@ export function RecommendationCard({
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 pt-2 border-t border-border-subtle">
+          <div className="flex items-center gap-2 pt-2 border-t border-border-subtle flex-wrap">
             <ActionButton
               active={feedbackGiven === "save"}
               activeColor="accent-primary"
@@ -329,10 +359,12 @@ export function RecommendationCard({
         <div className="relative w-32 sm:w-40 flex-shrink-0">
           <div className="aspect-[3/4] relative overflow-hidden">
             {rec.imageUrl ? (
-              <img
+              <Image
                 src={rec.imageUrl}
                 alt={rec.title}
-                className="w-full h-full object-cover"
+                fill
+                sizes="(max-width: 640px) 128px, 160px"
+                className="object-cover"
               />
             ) : (
               <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -384,12 +416,22 @@ export function RecommendationCard({
             </div>
             <button
               onClick={() => setExpanded(!expanded)}
-              className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors flex-shrink-0"
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={detailsId}
+              aria-label={expanded ? `Hide details for ${rec.title}` : `Show details for ${rec.title}`}
+              className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors flex-shrink-0"
             >
               {expanded ? (
-                <ChevronUp className="h-4 w-4" />
+                <>
+                  <ChevronUp className="h-4 w-4" />
+                  Less
+                </>
               ) : (
-                <ChevronDown className="h-4 w-4" />
+                <>
+                  <ChevronDown className="h-4 w-4" />
+                  Details
+                </>
               )}
             </button>
           </div>
@@ -415,6 +457,7 @@ export function RecommendationCard({
 
           {/* Expanded details */}
           <div
+            id={detailsId}
             className={`grid transition-all duration-300 ease-in-out ${
               expanded
                 ? "grid-rows-[1fr] opacity-100"
@@ -457,6 +500,18 @@ export function RecommendationCard({
                   </div>
                 ) : null}
 
+                {crossplayNote ? (
+                  <div className="flex items-start gap-2 text-xs text-text-muted">
+                    <Shuffle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent-primary" />
+                    <div>
+                      <span className="font-medium text-text-secondary">
+                        Cross-play:
+                      </span>{" "}
+                      <span>{crossplayNote}</span>
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Store links */}
                 {storeLinks.length > 0 && (
                   <div className="pt-2">
@@ -491,7 +546,7 @@ export function RecommendationCard({
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex items-center gap-2 pt-2 flex-wrap">
             <ActionButton
               active={feedbackGiven === "save"}
               activeColor="accent-primary"
@@ -552,7 +607,9 @@ function ActionButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
         active
           ? ACTION_ACTIVE_STYLES[activeColor] ?? ""

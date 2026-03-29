@@ -1,15 +1,17 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAppStore } from "@/contexts/app-store";
-import { Card } from "@/components/ui/card";
+import { refreshRemoteMirrorFromStore, useAppStore } from "@/contexts/app-store";
 import { Button } from "@/components/ui/button";
 import { GameCard } from "@/components/ui/game-card";
 import { GameSearchInput } from "@/components/ui/game-search-input";
+import { SyncStatusBanner } from "@/components/ui/sync-status-banner";
 import * as guestStorage from "@/lib/guest-storage";
-import type { GameEntry, GameSentiment } from "@/lib/types";
+import * as remoteStorage from "@/lib/supabase-storage";
+import type { GameEntry, GameSentiment, RecommendationSession } from "@/lib/types";
 import {
   Gamepad2,
   Heart,
@@ -24,6 +26,9 @@ import {
   ChevronDown,
   Users,
   X,
+  History,
+  Clock3,
+  ArrowRight,
 } from "lucide-react";
 import { WsipnLogo } from "@/components/ui/wsipn-logo";
 
@@ -34,11 +39,15 @@ export default function DashboardPage() {
     addGame,
     removeGame,
     updateGame,
+    sessions,
+    userId,
     hydrate,
     resetAll,
+    setPreferences,
+    setRecommendations,
   } = useAppStore();
   const [savedGames, setSavedGames] = useState<guestStorage.SavedGame[]>([]);
-  const [activeTab, setActiveTab] = useState<"profile" | "saved">(
+  const [activeTab, setActiveTab] = useState<"profile" | "saved" | "history">(
     "profile"
   );
   const [addingTo, setAddingTo] = useState<GameSentiment | null>(null);
@@ -49,6 +58,12 @@ export default function DashboardPage() {
     hydrate();
     setSavedGames(guestStorage.getSavedGames());
   }, [hydrate]);
+
+  useEffect(() => {
+    const syncSavedGames = () => setSavedGames(guestStorage.getSavedGames());
+    window.addEventListener(guestStorage.GUEST_STORAGE_EVENT, syncSavedGames);
+    return () => window.removeEventListener(guestStorage.GUEST_STORAGE_EVENT, syncSavedGames);
+  }, []);
 
   // Reset the confirm state after 3 seconds if not confirmed
   useEffect(() => {
@@ -85,7 +100,16 @@ export default function DashboardPage() {
 
   const removeSaved = (title: string) => {
     guestStorage.removeSavedGame(title);
-    setSavedGames(guestStorage.getSavedGames());
+    if (userId) {
+      remoteStorage.removeSavedGameNormalizedRemote(userId, title);
+      refreshRemoteMirrorFromStore();
+    }
+  };
+
+  const openSession = (session: RecommendationSession) => {
+    setPreferences(session.preferences);
+    setRecommendations(session.recommendations);
+    router.push("/recommendations");
   };
 
   const handleReset = () => {
@@ -132,13 +156,38 @@ export default function DashboardPage() {
   const tabs = [
     { key: "profile" as const, label: "Taste Profile" },
     { key: "saved" as const, label: "Play Later" },
+    { key: "history" as const, label: "History" },
   ];
 
   const stats = [
     { label: "Games Rated", value: totalGames, icon: Gamepad2 },
     { label: "Saved to Play", value: savedGames.length, icon: Bookmark },
     { label: "Loved", value: tasteProfile.loved.length, icon: Heart },
+    { label: "Sessions", value: sessions.length, icon: History },
   ];
+
+  const formatSessionTime = (createdAt: string) =>
+    new Date(createdAt).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+  const summarizePreferences = (session: RecommendationSession) => {
+    const summaryParts = [
+      session.preferences.genres.slice(0, 2).join(", "),
+      session.preferences.moods.slice(0, 1).join(", "),
+      session.preferences.playerMode !== "Any" ? session.preferences.playerMode : "",
+      session.preferences.crossplayCompatible ? "Cross-play" : "",
+      session.preferences.gameLength !== "No preference" ? session.preferences.gameLength : "",
+    ].filter(Boolean);
+
+    return summaryParts.length > 0
+      ? summaryParts.join(" • ")
+      : "Open-ended session";
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -187,6 +236,10 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <SyncStatusBanner compactWhenHealthy />
+        </div>
+
         {/* Stats grid - glass cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {stats.map((stat) => (
@@ -205,7 +258,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Segmented tab control */}
-        <div className="relative flex gap-0 glass rounded-2xl p-1.5 border border-border-subtle shadow-card">
+        <div
+          className="relative flex gap-0 glass rounded-2xl p-1.5 border border-border-subtle shadow-card"
+          role="tablist"
+          aria-label="Dashboard sections"
+        >
           {/* Active indicator */}
           <div
             className="absolute top-1.5 bottom-1.5 rounded-xl bg-gradient-accent shadow-elevated transition-all duration-300 ease-out"
@@ -218,6 +275,10 @@ export default function DashboardPage() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              id={`dashboard-tab-${tab.key}`}
+              aria-selected={activeTab === tab.key}
+              aria-controls={`dashboard-panel-${tab.key}`}
               className={`relative z-10 flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors duration-200 ${
                 activeTab === tab.key
                   ? "text-white"
@@ -231,7 +292,12 @@ export default function DashboardPage() {
 
         {/* Profile Tab */}
         {activeTab === "profile" && (
-          <div className="space-y-6">
+          <div
+            className="space-y-6"
+            role="tabpanel"
+            id="dashboard-panel-profile"
+            aria-labelledby="dashboard-tab-profile"
+          >
             {sentimentSections.map((section) => (
               <div
                 key={section.key}
@@ -310,7 +376,12 @@ export default function DashboardPage() {
 
         {/* Saved Games Tab */}
         {activeTab === "saved" && (
-          <div className="space-y-3">
+          <div
+            className="space-y-3"
+            role="tabpanel"
+            id="dashboard-panel-saved"
+            aria-labelledby="dashboard-tab-saved"
+          >
             {savedGames.length > 0 ? (
               savedGames.map((game) => (
                 <div
@@ -320,9 +391,12 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-4 p-4">
                     {/* Cover art */}
                     {game.imageUrl ? (
-                      <img
+                      <Image
                         src={game.imageUrl}
                         alt=""
+                        width={56}
+                        height={56}
+                        sizes="56px"
                         className="w-14 h-14 rounded-xl object-cover shadow-card flex-shrink-0"
                       />
                     ) : (
@@ -367,6 +441,77 @@ export default function DashboardPage() {
                   <p className="text-text-secondary font-medium">No saved games yet</p>
                   <p className="text-text-muted text-sm mt-1">
                     Save games from your recommendations to play later.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "history" && (
+          <div
+            className="space-y-3"
+            role="tabpanel"
+            id="dashboard-panel-history"
+            aria-labelledby="dashboard-tab-history"
+          >
+            {sessions.length > 0 ? (
+              sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="glass rounded-2xl border border-border-subtle shadow-card overflow-hidden"
+                >
+                  <div className="p-5 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 text-xs text-text-muted uppercase tracking-wider">
+                          <Clock3 className="h-3.5 w-3.5" />
+                          <span>{formatSessionTime(session.createdAt)}</span>
+                        </div>
+                        <h3 className="text-base font-semibold text-text-primary">
+                          {session.recommendations.length} recommendation{session.recommendations.length !== 1 ? "s" : ""}
+                        </h3>
+                        <p className="text-sm text-text-secondary">
+                          {summarizePreferences(session)}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => openSession(session)}
+                        className="flex-shrink-0"
+                      >
+                        Open
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {session.recommendations.slice(0, 5).map((rec) => (
+                        <span
+                          key={rec.id}
+                          className="px-3 py-1.5 rounded-xl text-xs font-medium bg-bg-tertiary text-text-secondary border border-border-subtle"
+                        >
+                          {rec.title}
+                        </span>
+                      ))}
+                      {session.recommendations.length > 5 && (
+                        <span className="px-3 py-1.5 rounded-xl text-xs font-medium bg-accent-primary/10 text-accent-primary border border-accent-primary/15">
+                          +{session.recommendations.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="glass rounded-2xl border border-border-subtle shadow-card text-center py-16 space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-accent-primary/10 flex items-center justify-center mx-auto">
+                  <History className="h-6 w-6 text-accent-primary" />
+                </div>
+                <div>
+                  <p className="text-text-secondary font-medium">No session history yet</p>
+                  <p className="text-text-muted text-sm mt-1">
+                    Successful recommendation runs will show up here so you can reopen them later.
                   </p>
                 </div>
               </div>

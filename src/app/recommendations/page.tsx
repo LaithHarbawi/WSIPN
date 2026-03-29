@@ -1,14 +1,17 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SectionRow } from "@/components/ui/section-row";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
 import { RecommendationSkeleton } from "@/components/ui/loading-skeleton";
+import { SyncStatusBanner } from "@/components/ui/sync-status-banner";
 import { Button } from "@/components/ui/button";
-import { useAppStore } from "@/contexts/app-store";
+import { refreshRemoteMirrorFromStore, useAppStore } from "@/contexts/app-store";
 import * as guestStorage from "@/lib/guest-storage";
+import * as remoteStorage from "@/lib/supabase-storage";
 import type { RecommendationFeedback } from "@/lib/types";
 import {
   Gamepad2,
@@ -34,6 +37,8 @@ export default function RecommendationsPage() {
     isGenerating,
     tasteProfile,
     preferences,
+    userId,
+    addSession,
     setIsGenerating,
     setRecommendations,
     hydrate,
@@ -43,12 +48,14 @@ export default function RecommendationsPage() {
   const [hydrated, setHydrated] = useState(false);
   // Feedback state: { recId: feedbackType }
   const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
-  // Titles the user marked "not interested" — persisted across sessions
-  const [notInterestedTitles, setNotInterestedTitles] = useState<string[]>([]);
   // Error state for failed generation
   const [error, setError] = useState<string | null>(null);
-  // Undo toast for "not interested"
-  const [undoToast, setUndoToast] = useState<{ recId: string; rec: typeof recommendations[0] } | null>(null);
+  // Undo toast for remove-style feedback actions
+  const [undoToast, setUndoToast] = useState<{
+    recId: string;
+    rec: typeof recommendations[0];
+    action: "not_interested" | "already_played";
+  } | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Cumulative set of all titles shown across retries — persisted to sessionStorage
   // so it survives navigation to /onboarding and back
@@ -58,7 +65,6 @@ export default function RecommendationsPage() {
 
   useEffect(() => {
     hydrate();
-    setNotInterestedTitles(guestStorage.getNotInterestedTitles());
     // Restore saved feedback from localStorage — only if IDs match current recs
     try {
       const saved = localStorage.getItem("wsipn_rec_feedback");
@@ -133,10 +139,11 @@ export default function RecommendationsPage() {
   /** Build full exclusion list: not-interested + cooldown titles + session previously shown */
   const buildExclusionList = useCallback((): string[] => {
     const ni = guestStorage.getNotInterestedTitles();
+    const alreadyPlayed = guestStorage.getAlreadyPlayedTitles();
     const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
     const cooldown = guestStorage.getCooldownTitles(prefHash);
     const sessionPrev = [...previouslyShownRef.current];
-    return [...new Set([...ni, ...cooldown, ...sessionPrev])];
+    return [...new Set([...ni, ...alreadyPlayed, ...cooldown, ...sessionPrev])];
   }, [preferences, tasteProfile]);
 
   /** Hard client-side filter: remove any game in the exclusion list that the LLM returned anyway */
@@ -155,6 +162,18 @@ export default function RecommendationsPage() {
       });
     });
   }, [buildExclusionList]);
+
+  const persistSession = useCallback((
+    sessionPreferences: typeof preferences,
+    sessionRecommendations: typeof recommendations
+  ) => {
+    addSession({
+      id: `session-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: new Date().toISOString(),
+      preferences: sessionPreferences,
+      recommendations: sessionRecommendations,
+    });
+  }, [addSession]);
 
   const handleRefresh = async () => {
     // Cancel any in-flight generation request
@@ -184,6 +203,7 @@ export default function RecommendationsPage() {
       // Save to persistent history
       const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
       guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title), prefHash);
+      persistSession(preferences, cleaned);
       setRecommendations(cleaned);
       saveFeedbackMap({}); // Reset feedback for new recs
     } catch (e) {
@@ -198,9 +218,10 @@ export default function RecommendationsPage() {
     recId: string,
     type: RecommendationFeedback
   ) => {
+    const existingFeedback = feedbackMap[recId];
     // Toggle feedback — clicking same action again clears it
     const updated = { ...feedbackMap };
-    if (updated[recId] === type) {
+    if (existingFeedback === type) {
       delete updated[recId];
     } else {
       updated[recId] = type;
@@ -210,12 +231,26 @@ export default function RecommendationsPage() {
     if (type === "save") {
       const rec = recommendations.find((r) => r.id === recId);
       if (rec) {
-        guestStorage.saveGame({
+        const savedGame = {
           title: rec.title,
           imageUrl: rec.imageUrl,
           genres: rec.genres,
           savedAt: new Date().toISOString(),
-        });
+        };
+        if (existingFeedback === "save") {
+          guestStorage.removeSavedGame(rec.title);
+          if (userId) {
+            remoteStorage.removeSavedGameNormalizedRemote(userId, rec.title);
+          }
+        } else {
+          guestStorage.saveGame(savedGame);
+          if (userId) {
+            remoteStorage.addSavedGameNormalizedRemote(userId, savedGame);
+          }
+        }
+        if (userId) {
+          refreshRemoteMirrorFromStore();
+        }
       }
     }
 
@@ -224,16 +259,36 @@ export default function RecommendationsPage() {
       if (rec) {
         // Persist to not-interested list
         guestStorage.addNotInterested(rec.title);
-        setNotInterestedTitles(guestStorage.getNotInterestedTitles());
+        if (userId) {
+          remoteStorage.addTitleFeedbackNormalizedRemote(userId, rec.title, "not_interested");
+          refreshRemoteMirrorFromStore();
+        }
         // Immediately remove from current recommendations
         const filtered = recommendations.filter((r) => r.id !== recId);
         setRecommendations(filtered);
         // Show undo toast
         if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-        setUndoToast({ recId, rec });
+        setUndoToast({ recId, rec, action: "not_interested" });
         undoTimerRef.current = setTimeout(() => setUndoToast(null), 6000);
       }
       return; // Don't proceed to more_like_this check
+    }
+
+    if (type === "already_played") {
+      const rec = recommendations.find((r) => r.id === recId);
+      if (rec) {
+        guestStorage.addAlreadyPlayed(rec.title);
+        if (userId) {
+          remoteStorage.addTitleFeedbackNormalizedRemote(userId, rec.title, "already_played");
+          refreshRemoteMirrorFromStore();
+        }
+        const filtered = recommendations.filter((r) => r.id !== recId);
+        setRecommendations(filtered);
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        setUndoToast({ recId, rec, action: "already_played" });
+        undoTimerRef.current = setTimeout(() => setUndoToast(null), 6000);
+      }
+      return;
     }
 
     if (type === "more_like_this") {
@@ -248,6 +303,13 @@ export default function RecommendationsPage() {
       setIsGenerating(true);
       setError(null);
       try {
+        if (userId) {
+          remoteStorage.addTitleFeedbackNormalizedRemote(
+            userId,
+            sourceRec.title,
+            "more_like_this"
+          );
+        }
         const allExclusions = buildExclusionList();
         const augmentedPreferences = {
           ...preferences,
@@ -274,7 +336,8 @@ export default function RecommendationsPage() {
         const cleaned = hardFilterExclusions(data.recommendations, [sourceRec.title]);
         // Save to persistent history
         const prefHash = guestStorage.buildPrefHash(preferences, tasteProfile);
-      guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title), prefHash);
+        guestStorage.addToRecHistory(cleaned.map((r: { title: string }) => r.title), prefHash);
+        persistSession(augmentedPreferences, cleaned);
         setRecommendations(cleaned);
         saveFeedbackMap({}); // Reset feedback for new recs
       } catch (e) {
@@ -286,17 +349,30 @@ export default function RecommendationsPage() {
     }
   };
 
-  const handleUndoNotInterested = useCallback(() => {
+  const handleUndoRemoval = useCallback(() => {
     if (!undoToast) return;
-    // Remove from not-interested list
-    guestStorage.removeNotInterested(undoToast.rec.title);
-    setNotInterestedTitles(guestStorage.getNotInterestedTitles());
+    if (undoToast.action === "not_interested") {
+      guestStorage.removeNotInterested(undoToast.rec.title);
+      if (userId) {
+        remoteStorage.removeTitleFeedbackNormalizedRemote(userId, undoToast.rec.title, "not_interested");
+        refreshRemoteMirrorFromStore();
+      }
+    } else {
+      guestStorage.removeAlreadyPlayed(undoToast.rec.title);
+      if (userId) {
+        remoteStorage.removeTitleFeedbackNormalizedRemote(userId, undoToast.rec.title, "already_played");
+        refreshRemoteMirrorFromStore();
+      }
+    }
     // Restore to current recommendations
     setRecommendations([...recommendations, undoToast.rec]);
+    const updated = { ...feedbackMap };
+    delete updated[undoToast.recId];
+    saveFeedbackMap(updated);
     // Clear toast
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     setUndoToast(null);
-  }, [undoToast, recommendations, setRecommendations]);
+  }, [feedbackMap, recommendations, saveFeedbackMap, setRecommendations, undoToast, userId]);
 
   const scrollToDetail = useCallback((recId: string) => {
     const el = document.getElementById(`detail-${recId}`);
@@ -393,6 +469,10 @@ export default function RecommendationsPage() {
           </div>
         ) : (
           <div className="space-y-10">
+            <div className="max-w-7xl mx-auto px-6">
+              <SyncStatusBanner compactWhenHealthy />
+            </div>
+
             {/* ═══════════════════════════════════════════
                 HERO SECTION — first primary recommendation
                 ═══════════════════════════════════════════ */}
@@ -401,11 +481,13 @@ export default function RecommendationsPage() {
                 {/* Background image — prefer screenshot/artwork for wide hero, center on focal point */}
                 <div className="absolute inset-0">
                   {(heroRec.screenshotUrl || heroRec.imageUrl) ? (
-                    <img
-                      src={heroRec.screenshotUrl || heroRec.imageUrl}
+                    <Image
+                      src={(heroRec.screenshotUrl || heroRec.imageUrl)!}
                       alt=""
-                      className="w-full h-full object-cover object-top"
-                      loading="eager"
+                      fill
+                      priority
+                      sizes="100vw"
+                      className="object-cover object-top"
                     />
                   ) : (
                     <div className="w-full h-full bg-bg-tertiary" />
@@ -525,10 +607,12 @@ export default function RecommendationsPage() {
                         {/* Card image */}
                         <div className="relative h-40 overflow-hidden">
                           {(rec.screenshotUrl || rec.imageUrl) ? (
-                            <img
-                              src={rec.screenshotUrl || rec.imageUrl}
+                            <Image
+                              src={(rec.screenshotUrl || rec.imageUrl)!}
                               alt={rec.title}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                              fill
+                              sizes="280px"
+                              className="object-cover group-hover:scale-110 transition-transform duration-500"
                             />
                           ) : (
                             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -582,10 +666,12 @@ export default function RecommendationsPage() {
                       <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                         <div className="relative h-40 overflow-hidden">
                           {(rec.screenshotUrl || rec.imageUrl) ? (
-                            <img
-                              src={rec.screenshotUrl || rec.imageUrl}
+                            <Image
+                              src={(rec.screenshotUrl || rec.imageUrl)!}
                               alt={rec.title}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                              fill
+                              sizes="280px"
+                              className="object-cover group-hover:scale-110 transition-transform duration-500"
                             />
                           ) : (
                             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -638,10 +724,12 @@ export default function RecommendationsPage() {
                       <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                         <div className="relative h-40 overflow-hidden">
                           {(rec.screenshotUrl || rec.imageUrl) ? (
-                            <img
-                              src={rec.screenshotUrl || rec.imageUrl}
+                            <Image
+                              src={(rec.screenshotUrl || rec.imageUrl)!}
                               alt={rec.title}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                              fill
+                              sizes="280px"
+                              className="object-cover group-hover:scale-110 transition-transform duration-500"
                             />
                           ) : (
                             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -698,10 +786,12 @@ export default function RecommendationsPage() {
                         <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
                           <div className="relative h-40 overflow-hidden">
                             {(rec.screenshotUrl || rec.imageUrl) ? (
-                              <img
-                                src={rec.screenshotUrl || rec.imageUrl}
+                              <Image
+                                src={(rec.screenshotUrl || rec.imageUrl)!}
                                 alt={rec.title}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                fill
+                                sizes="280px"
+                                className="object-cover group-hover:scale-110 transition-transform duration-500"
                               />
                             ) : (
                               <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -811,16 +901,18 @@ export default function RecommendationsPage() {
             </div>
 
             {/* ═══════════════════════════════════════════
-                UNDO TOAST — not interested
+                UNDO TOAST — remove-style feedback
                 ═══════════════════════════════════════════ */}
             {undoToast && (
               <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-bg-secondary border border-border-subtle shadow-elevated backdrop-blur-xl">
                   <span className="text-sm text-text-secondary">
-                    Removed <span className="font-medium text-text-primary">{undoToast.rec.title}</span>
+                    {undoToast.action === "already_played" ? "Marked" : "Removed"}{" "}
+                    <span className="font-medium text-text-primary">{undoToast.rec.title}</span>
+                    {undoToast.action === "already_played" ? " as already played" : ""}
                   </span>
                   <button
-                    onClick={handleUndoNotInterested}
+                    onClick={handleUndoRemoval}
                     className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-accent-primary hover:bg-accent-primary/10 transition-colors"
                   >
                     <Undo2 className="h-3.5 w-3.5" />

@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export function StepWelcome() {
   const router = useRouter();
-  const { setOnboardingStep, setUserMode, userMode } = useAppStore();
+  const { setOnboardingStep, setUserMode } = useAppStore();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
 
