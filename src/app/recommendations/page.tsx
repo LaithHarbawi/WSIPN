@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SectionRow } from "@/components/ui/section-row";
@@ -50,6 +50,7 @@ export default function RecommendationsPage() {
   const [feedbackMap, setFeedbackMap] = useState<Record<string, RecommendationFeedback>>({});
   // Error state for failed generation
   const [error, setError] = useState<string | null>(null);
+  const [showDetailedCards, setShowDetailedCards] = useState(false);
   // Undo toast for remove-style feedback actions
   const [undoToast, setUndoToast] = useState<{
     recId: string;
@@ -121,10 +122,14 @@ export default function RecommendationsPage() {
   }, []);
 
   // Normalize types (LLM may return uppercase like "PRIMARY")
-  const normalized = recommendations.map((r) => ({
-    ...r,
-    type: r.type.toLowerCase() as typeof r.type,
-  }));
+  const normalized = useMemo(
+    () =>
+      recommendations.map((r) => ({
+        ...r,
+        type: r.type.toLowerCase() as typeof r.type,
+      })),
+    [recommendations]
+  );
 
   const primary = normalized.filter((r) => r.type === "primary");
   const discovery = normalized.filter((r) => r.type === "discovery");
@@ -135,6 +140,10 @@ export default function RecommendationsPage() {
 
   const heroRec = primary[0];
   const remainingPrimary = primary.slice(1);
+  const detailRecommendations = useMemo(
+    () => [heroRec, ...remainingPrimary, ...discovery, ...wildcards, ...specialPicks].filter(Boolean),
+    [heroRec, remainingPrimary, discovery, wildcards, specialPicks]
+  );
 
   /** Build full exclusion list: not-interested + cooldown titles + session previously shown */
   const buildExclusionList = useCallback((): string[] => {
@@ -375,9 +384,15 @@ export default function RecommendationsPage() {
   }, [feedbackMap, recommendations, saveFeedbackMap, setRecommendations, undoToast, userId]);
 
   const scrollToDetail = useCallback((recId: string) => {
-    const el = document.getElementById(`detail-${recId}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
+    if (!showDetailedCards) {
+      setShowDetailedCards(true);
+    }
+
+    window.setTimeout(() => {
+      const el = document.getElementById(`detail-${recId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, showDetailedCards ? 0 : 80);
+  }, [showDetailedCards]);
 
   const hasResults = recommendations.length > 0;
 
@@ -391,11 +406,10 @@ export default function RecommendationsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-bg-primary">
-      {/* Ambient blobs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-accent-primary/[0.03] blur-[140px]" />
-        <div className="absolute bottom-[-30%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent-secondary/[0.04] blur-[140px]" />
-        <div className="absolute top-[40%] right-[-20%] w-[40%] h-[40%] rounded-full bg-accent-warm/[0.02] blur-[120px]" />
+      {/* Ambient background kept lighter to reduce scroll/compositing cost on Safari/WebKit */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-12%] left-[-8%] h-[34rem] w-[34rem] rounded-full bg-accent-primary/[0.025] blur-[80px]" />
+        <div className="absolute right-[-8%] top-[22rem] h-[28rem] w-[28rem] rounded-full bg-accent-secondary/[0.025] blur-[72px]" />
       </div>
 
       {/* ── Refined Header ── */}
@@ -589,7 +603,7 @@ export default function RecommendationsPage() {
                       className="flex-shrink-0 w-[280px] group cursor-pointer"
                       onClick={() => scrollToDetail(rec.id)}
                     >
-                      <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                      <div className="bg-gradient-card rounded-2xl overflow-hidden border border-border-subtle shadow-card transition-colors duration-200 hover:border-border-medium hover:bg-bg-card-hover">
                         {/* Card image */}
                         <div className="relative h-40 overflow-hidden">
                           {(rec.screenshotUrl || rec.imageUrl) ? (
@@ -598,7 +612,7 @@ export default function RecommendationsPage() {
                               alt={rec.title}
                               fill
                               sizes="280px"
-                              className="object-cover group-hover:scale-110 transition-transform duration-500"
+                              className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                             />
                           ) : (
                             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -606,7 +620,7 @@ export default function RecommendationsPage() {
                             </div>
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
-                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${TYPE_BADGE[rec.type].bg} ${TYPE_BADGE[rec.type].color} backdrop-blur-sm`}>
+                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${TYPE_BADGE[rec.type].bg} ${TYPE_BADGE[rec.type].color}`}>
                             <Sparkles className="h-2.5 w-2.5" />
                             {TYPE_BADGE[rec.type].label}
                           </span>
@@ -649,7 +663,7 @@ export default function RecommendationsPage() {
                       className="flex-shrink-0 w-[280px] group cursor-pointer"
                       onClick={() => scrollToDetail(rec.id)}
                     >
-                      <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                      <div className="bg-gradient-card rounded-2xl overflow-hidden border border-border-subtle shadow-card transition-colors duration-200 hover:border-border-medium hover:bg-bg-card-hover">
                         <div className="relative h-40 overflow-hidden">
                           {(rec.screenshotUrl || rec.imageUrl) ? (
                             <Image
@@ -657,7 +671,7 @@ export default function RecommendationsPage() {
                               alt={rec.title}
                               fill
                               sizes="280px"
-                              className="object-cover group-hover:scale-110 transition-transform duration-500"
+                              className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                             />
                           ) : (
                             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -665,7 +679,7 @@ export default function RecommendationsPage() {
                             </div>
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
-                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${TYPE_BADGE["discovery"].bg} ${TYPE_BADGE["discovery"].color} backdrop-blur-sm`}>
+                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${TYPE_BADGE["discovery"].bg} ${TYPE_BADGE["discovery"].color}`}>
                             <Compass className="h-2.5 w-2.5" />
                             {TYPE_BADGE["discovery"].label}
                           </span>
@@ -707,7 +721,7 @@ export default function RecommendationsPage() {
                       className="flex-shrink-0 w-[280px] group cursor-pointer"
                       onClick={() => scrollToDetail(rec.id)}
                     >
-                      <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                      <div className="bg-gradient-card rounded-2xl overflow-hidden border border-border-subtle shadow-card transition-colors duration-200 hover:border-border-medium hover:bg-bg-card-hover">
                         <div className="relative h-40 overflow-hidden">
                           {(rec.screenshotUrl || rec.imageUrl) ? (
                             <Image
@@ -715,7 +729,7 @@ export default function RecommendationsPage() {
                               alt={rec.title}
                               fill
                               sizes="280px"
-                              className="object-cover group-hover:scale-110 transition-transform duration-500"
+                              className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                             />
                           ) : (
                             <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -723,7 +737,7 @@ export default function RecommendationsPage() {
                             </div>
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
-                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${TYPE_BADGE[rec.type].bg} ${TYPE_BADGE[rec.type].color} backdrop-blur-sm`}>
+                          <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${TYPE_BADGE[rec.type].bg} ${TYPE_BADGE[rec.type].color}`}>
                             <Zap className="h-2.5 w-2.5" />
                             {TYPE_BADGE[rec.type].label}
                           </span>
@@ -769,7 +783,7 @@ export default function RecommendationsPage() {
                         className="flex-shrink-0 w-[280px] group cursor-pointer"
                         onClick={() => scrollToDetail(rec.id)}
                       >
-                        <div className="glass rounded-2xl overflow-hidden shadow-elevated hover:glow-md transition-all duration-300 hover:scale-[1.02]">
+                        <div className="bg-gradient-card rounded-2xl overflow-hidden border border-border-subtle shadow-card transition-colors duration-200 hover:border-border-medium hover:bg-bg-card-hover">
                           <div className="relative h-40 overflow-hidden">
                             {(rec.screenshotUrl || rec.imageUrl) ? (
                               <Image
@@ -777,7 +791,7 @@ export default function RecommendationsPage() {
                                 alt={rec.title}
                                 fill
                                 sizes="280px"
-                                className="object-cover group-hover:scale-110 transition-transform duration-500"
+                                className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                               />
                             ) : (
                               <div className="w-full h-full bg-bg-tertiary flex items-center justify-center">
@@ -785,7 +799,7 @@ export default function RecommendationsPage() {
                               </div>
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 to-transparent" />
-                            <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${badge.bg} ${badge.color} backdrop-blur-sm`}>
+                            <span className={`absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${badge.bg} ${badge.color}`}>
                               <BadgeIcon className="h-2.5 w-2.5" />
                               {badge.label}
                             </span>
@@ -817,71 +831,41 @@ export default function RecommendationsPage() {
               {/* ═══════════════════════════════════════════
                   FULL DETAIL CARDS — vertical list
                   ═══════════════════════════════════════════ */}
-              <div className="pt-6 border-t border-border-subtle space-y-8">
-                <div className="space-y-1">
-                  <h2 className="text-xl font-bold tracking-tight">All Recommendations</h2>
-                  <p className="text-sm text-text-muted">
-                    Detailed view with explanations and actions
-                  </p>
+              <div className="space-y-5 border-t border-border-subtle pt-6">
+                <div className="flex items-end justify-between gap-4 flex-wrap">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-bold tracking-tight">Detailed Cards</h2>
+                    <p className="text-sm text-text-muted">
+                      Expand the full recommendation stack only when you want deeper reading and actions.
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowDetailedCards((current) => !current)}
+                  >
+                    {showDetailedCards ? "Hide Detailed Cards" : `Show Detailed Cards (${detailRecommendations.length})`}
+                  </Button>
                 </div>
 
-                {/* Hero rec full card */}
-                {heroRec && (
-                  <div id={`detail-${heroRec.id}`}>
-                    <RecommendationCard
-                      key={heroRec.id}
-                      recommendation={heroRec}
-                      featured
-                      activeFeedback={feedbackMap[heroRec.id] ?? null}
-                      onFeedback={(type) => handleFeedback(heroRec.id, type)}
-                    />
+                {showDetailedCards ? (
+                  <div className="space-y-8">
+                    {detailRecommendations.map((rec, index) =>
+                      rec ? (
+                        <div key={rec.id} id={`detail-${rec.id}`}>
+                          <RecommendationCard
+                            recommendation={rec}
+                            featured={index === 0}
+                            activeFeedback={feedbackMap[rec.id] ?? null}
+                            onFeedback={(type) => handleFeedback(rec.id, type)}
+                          />
+                        </div>
+                      ) : null
+                    )}
                   </div>
-                )}
-
-                {/* Remaining primary */}
-                {remainingPrimary.map((rec) => (
-                  <div key={rec.id} id={`detail-${rec.id}`}>
-                    <RecommendationCard
-                      recommendation={rec}
-                      activeFeedback={feedbackMap[rec.id] ?? null}
-                      onFeedback={(type) => handleFeedback(rec.id, type)}
-                    />
+                ) : (
+                  <div className="rounded-2xl border border-border-subtle bg-bg-secondary/80 px-5 py-6 text-sm text-text-secondary">
+                    Keeping the heavy detail cards collapsed improves scroll performance, especially on Safari and lower-power Macs.
                   </div>
-                ))}
-
-                {/* Discovery */}
-                {discovery.map((rec) => (
-                  <div key={rec.id} id={`detail-${rec.id}`}>
-                    <RecommendationCard
-                      recommendation={rec}
-                      activeFeedback={feedbackMap[rec.id] ?? null}
-                      onFeedback={(type) => handleFeedback(rec.id, type)}
-                    />
-                  </div>
-                ))}
-
-                {/* Wildcards */}
-                {wildcards.map((rec) => (
-                  <div key={rec.id} id={`detail-${rec.id}`}>
-                    <RecommendationCard
-                      recommendation={rec}
-                      activeFeedback={feedbackMap[rec.id] ?? null}
-                      onFeedback={(type) => handleFeedback(rec.id, type)}
-                    />
-                  </div>
-                ))}
-
-                {/* Special picks */}
-                {specialPicks.map((rec) =>
-                  rec ? (
-                    <div key={rec.id} id={`detail-${rec.id}`}>
-                      <RecommendationCard
-                        recommendation={rec}
-                        activeFeedback={feedbackMap[rec.id] ?? null}
-                        onFeedback={(type) => handleFeedback(rec.id, type)}
-                      />
-                    </div>
-                  ) : null
                 )}
               </div>
             </div>
@@ -891,7 +875,7 @@ export default function RecommendationsPage() {
                 ═══════════════════════════════════════════ */}
             {undoToast && (
               <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-bg-secondary border border-border-subtle shadow-elevated backdrop-blur-xl">
+                <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-bg-secondary px-5 py-3 shadow-elevated">
                   <span className="text-sm text-text-secondary">
                     {undoToast.action === "already_played" ? "Marked" : "Removed"}{" "}
                     <span className="font-medium text-text-primary">{undoToast.rec.title}</span>
@@ -912,7 +896,7 @@ export default function RecommendationsPage() {
                 ACTION BAR — sticky bottom
                 ═══════════════════════════════════════════ */}
             <div className="fixed bottom-0 left-0 right-0 z-30">
-              <div className="bg-bg-primary/95 backdrop-blur-xl border-t border-accent-primary/20 shadow-[0_-4px_30px_rgba(0,0,0,0.4)]">
+              <div className="border-t border-accent-primary/20 bg-bg-primary shadow-[0_-4px_20px_rgba(0,0,0,0.35)]">
                 <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-center gap-3">
                   <Button
                     onClick={handleRefresh}
