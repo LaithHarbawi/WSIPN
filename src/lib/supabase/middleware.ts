@@ -1,6 +1,8 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+const AUTH_TIMEOUT_MS = 1500;
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -25,6 +27,19 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  try {
+    await Promise.race([
+      supabase.auth.getUser(),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Supabase middleware auth timeout")),
+          AUTH_TIMEOUT_MS
+        )
+      ),
+    ]);
+  } catch (error) {
+    console.warn("[middleware] Failed to refresh Supabase session, continuing without blocking the request.", error);
+  }
+
   return supabaseResponse;
 }
