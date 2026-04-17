@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useCallback, useEffect } from "react";
 import {
   X,
@@ -15,7 +16,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAppStore } from "@/contexts/app-store";
+import { refreshRemoteMirrorFromStore, useAppStore } from "@/contexts/app-store";
 import * as guestStorage from "@/lib/guest-storage";
 import * as remote from "@/lib/supabase-storage";
 import type { GameEntry, GameSentiment } from "@/lib/types";
@@ -93,7 +94,10 @@ export function SteamImportModal({ open, onClose, onImport, steamIdFromLogin }: 
               fetchedAt: new Date().toISOString(),
             };
             guestStorage.saveSteamProfile(steamData);
-            if (userId) remote.saveSteamProfileRemote(userId, steamData);
+            if (userId) {
+              remote.saveSteamProfileNormalizedRemote(userId, steamData);
+              refreshRemoteMirrorFromStore();
+            }
           }
         } catch {
           setError("Failed to connect. Please try again.");
@@ -132,7 +136,10 @@ export function SteamImportModal({ open, onClose, onImport, steamIdFromLogin }: 
           fetchedAt: new Date().toISOString(),
         };
         guestStorage.saveSteamProfile(steamData);
-        if (userId) remote.saveSteamProfileRemote(userId, steamData);
+        if (userId) {
+          remote.saveSteamProfileNormalizedRemote(userId, steamData);
+          refreshRemoteMirrorFromStore();
+        }
       }
     } catch {
       setError("Failed to connect. Please try again.");
@@ -452,11 +459,13 @@ export function SteamImportModal({ open, onClose, onImport, steamIdFromLogin }: 
                       }`}
                     >
                       {/* Game image */}
-                      <img
+                      <Image
                         src={game.headerUrl}
                         alt=""
+                        width={80}
+                        height={37}
+                        sizes="80px"
                         className="w-[80px] h-[37px] rounded object-cover flex-shrink-0 bg-bg-tertiary"
-                        loading="lazy"
                       />
 
                       {/* Info */}

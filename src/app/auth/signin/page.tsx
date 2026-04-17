@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { fetchUserData } from "@/lib/supabase-storage";
 import { useAppStore } from "@/contexts/app-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,14 +36,35 @@ export default function SignInPage() {
         setError(signInError.message);
       } else if (data.user) {
         setUserMode("authenticated", data.user.id);
-        // Check if user has completed onboarding (has any games)
-        const profileRaw = localStorage.getItem("wsipn_taste_profile");
-        const step = localStorage.getItem("wsipn_onboarding_step");
-        const hasGames = profileRaw && JSON.parse(profileRaw) &&
-          (JSON.parse(profileRaw).loved?.length > 0 ||
-           JSON.parse(profileRaw).liked?.length > 0 ||
-           JSON.parse(profileRaw).disliked?.length > 0);
-        const completedOnboarding = step && parseInt(step) >= 3;
+        // Prefer local state for immediate continuity, but fall back to Supabase
+        // so returning users on a fresh browser land in the right flow.
+        let hasGames = false;
+        let completedOnboarding = false;
+
+        try {
+          const profileRaw = localStorage.getItem("wsipn_taste_profile");
+          const step = localStorage.getItem("wsipn_onboarding_step");
+          if (profileRaw) {
+            const profile = JSON.parse(profileRaw);
+            hasGames =
+              (profile.loved?.length ?? 0) > 0 ||
+              (profile.liked?.length ?? 0) > 0 ||
+              (profile.disliked?.length ?? 0) > 0;
+          }
+          completedOnboarding = step ? parseInt(step, 10) >= 3 : false;
+        } catch {
+          // Ignore malformed local data and fall back to remote state below.
+        }
+
+        if (!hasGames && !completedOnboarding) {
+          const remoteData = await fetchUserData(data.user.id);
+          const remoteProfile = remoteData?.taste_profile ?? { loved: [], liked: [], disliked: [] };
+          hasGames =
+            (remoteProfile.loved?.length ?? 0) +
+            (remoteProfile.liked?.length ?? 0) +
+            (remoteProfile.disliked?.length ?? 0) > 0;
+          completedOnboarding = (remoteData?.onboarding_step ?? 0) >= 3;
+        }
 
         if (hasGames || completedOnboarding) {
           router.push("/dashboard");

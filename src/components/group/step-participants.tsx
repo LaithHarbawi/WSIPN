@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSearchInput } from "@/components/ui/game-search-input";
@@ -31,6 +32,7 @@ const defaultPreferences: CurrentPreferences = {
   difficulty: "No preference",
   gameLength: "No preference",
   playerMode: "Any",
+  crossplayCompatible: false,
   era: "Any era",
   timeCommitment: "Varies / No preference",
   platforms: [],
@@ -290,9 +292,12 @@ export function StepParticipants({
                             className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-tertiary/50 group"
                           >
                             {game.imageUrl ? (
-                              <img
+                              <Image
                                 src={game.imageUrl}
                                 alt=""
+                                width={28}
+                                height={28}
+                                sizes="28px"
                                 className="w-7 h-7 rounded object-cover flex-shrink-0"
                               />
                             ) : (

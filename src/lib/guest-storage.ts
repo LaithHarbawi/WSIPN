@@ -16,10 +16,12 @@ const KEYS = {
   recommendations: "wsipn_recommendations",
   steamProfile: "wsipn_steam_profile",
   notInterested: "wsipn_not_interested",
+  alreadyPlayed: "wsipn_already_played",
   recHistory: "wsipn_rec_history",
 } as const;
 
 const MIGRATION_KEY = "wsipn_migration_v2_done";
+export const GUEST_STORAGE_EVENT = "wsipn:guest-storage-updated";
 
 function getItem<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -34,6 +36,7 @@ function getItem<T>(key: string, fallback: T): T {
 function setItem(key: string, value: unknown) {
   if (typeof window === "undefined") return;
   localStorage.setItem(key, JSON.stringify(value));
+  window.dispatchEvent(new CustomEvent(GUEST_STORAGE_EVENT, { detail: { key } }));
 }
 
 // ── Migration: v1 → v2 (remove didnt_finish, move to disliked with playStatus: "dropped") ──
@@ -85,7 +88,7 @@ const emptyProfile: TasteProfile = {
 export function getTasteProfile(): TasteProfile {
   const profile = getItem(KEYS.tasteProfile, emptyProfile);
   // Strip any legacy didnt_finish key that might remain
-  const { didnt_finish, ...clean } = profile as TasteProfile & { didnt_finish?: GameEntry[] };
+  const clean = profile as TasteProfile & { didnt_finish?: GameEntry[] };
   return { loved: clean.loved ?? [], liked: clean.liked ?? [], disliked: clean.disliked ?? [] };
 }
 
@@ -143,6 +146,7 @@ const defaultPreferences: CurrentPreferences = {
   difficulty: "No preference",
   gameLength: "No preference",
   playerMode: "Any",
+  crossplayCompatible: false,
   era: "Any era",
   timeCommitment: "Varies / No preference",
   platforms: [],
@@ -160,6 +164,9 @@ export function getCurrentPreferences(): CurrentPreferences {
   }
   if (typeof migrated.globalComment !== "string") {
     migrated.globalComment = "";
+  }
+  if (typeof migrated.crossplayCompatible !== "boolean") {
+    migrated.crossplayCompatible = false;
   }
   delete migrated.platform;
   delete migrated.scope;
@@ -239,6 +246,10 @@ export function saveGame(game: SavedGame) {
   }
 }
 
+export function saveSavedGames(games: SavedGame[]) {
+  setItem(KEYS.savedGames, games);
+}
+
 export function removeSavedGame(title: string) {
   const games = getSavedGames().filter((g) => g.title !== title);
   setItem(KEYS.savedGames, games);
@@ -275,6 +286,35 @@ export function removeNotInterested(title: string) {
   setItem(KEYS.notInterested, list);
 }
 
+export function saveNotInterestedTitles(titles: string[]) {
+  setItem(KEYS.notInterested, titles);
+}
+
+// ── Already Played ──
+
+export function getAlreadyPlayedTitles(): string[] {
+  return getItem(KEYS.alreadyPlayed, []);
+}
+
+export function addAlreadyPlayed(title: string) {
+  const list = getAlreadyPlayedTitles();
+  const normalized = title.toLowerCase();
+  if (!list.some((t) => t.toLowerCase() === normalized)) {
+    list.push(title);
+    setItem(KEYS.alreadyPlayed, list);
+  }
+}
+
+export function removeAlreadyPlayed(title: string) {
+  const normalized = title.toLowerCase();
+  const list = getAlreadyPlayedTitles().filter((t) => t.toLowerCase() !== normalized);
+  setItem(KEYS.alreadyPlayed, list);
+}
+
+export function saveAlreadyPlayedTitles(titles: string[]) {
+  setItem(KEYS.alreadyPlayed, titles);
+}
+
 // ── Recommendation History (cooldown-based — prevents short-term repeats) ──
 // Games are on cooldown for COOLDOWN_DAYS unless the user changes their preferences,
 // which generates a different prefHash and makes all old recs eligible again.
@@ -293,20 +333,40 @@ export function buildPrefHash(
   prefs: CurrentPreferences,
   profile: TasteProfile
 ): string {
+  const normalizeList = (values: readonly string[] | undefined) =>
+    [...(values ?? [])]
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .join(",");
+
+  const serializeEntries = (entries: GameEntry[]) =>
+    entries
+      .map((entry) => [
+        entry.title.trim().toLowerCase(),
+        entry.comment?.trim().toLowerCase() ?? "",
+        entry.platform?.trim().toLowerCase() ?? "",
+        entry.hoursPlayed ?? "",
+        entry.playStatus ?? "",
+        normalizeList(entry.genres),
+      ].join("::"))
+      .sort((a, b) => a.localeCompare(b))
+      .join("|");
+
   const parts = [
-    prefs.genres.sort().join(","),
-    prefs.moods.sort().join(","),
+    normalizeList(prefs.genres),
+    normalizeList(prefs.moods),
     prefs.difficulty,
     prefs.gameLength,
     prefs.playerMode,
+    prefs.crossplayCompatible ? "crossplay" : "no-crossplay",
     prefs.era,
     prefs.timeCommitment,
-    (prefs.platforms ?? []).sort().join(","),
-    // Include game titles so adding/removing games changes the hash
-    [...profile.loved, ...profile.liked, ...profile.disliked]
-      .map((g) => g.title.toLowerCase())
-      .sort()
-      .join(","),
+    normalizeList(prefs.platforms),
+    prefs.globalComment.trim().toLowerCase(),
+    `loved:${serializeEntries(profile.loved)}`,
+    `liked:${serializeEntries(profile.liked)}`,
+    `disliked:${serializeEntries(profile.disliked)}`,
   ];
   // Simple hash — not cryptographic, just needs to detect changes
   let hash = 0;
@@ -336,22 +396,28 @@ export function getCooldownTitles(currentPrefHash: string): string[] {
 export function addToRecHistory(titles: string[], prefHash: string) {
   const existing = getRecHistory();
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const existingNorm = new Set(existing.map((e) => normalize(e.title)));
   const now = Date.now();
-  const newEntries: RecHistoryEntry[] = titles
-    .filter((t) => !existingNorm.has(normalize(t)))
-    .map((title) => ({ title, recommendedAt: now, prefHash }));
-  if (newEntries.length === 0) {
-    // Update timestamps for re-recommended games (same prefHash)
-    const updated = existing.map((e) => {
-      const eNorm = normalize(e.title);
-      const match = titles.find((t) => normalize(t) === eNorm);
-      return match ? { ...e, recommendedAt: now, prefHash } : e;
-    });
-    setItem(KEYS.recHistory, updated.slice(-MAX_REC_HISTORY));
-    return;
+  const latestTitles = new Map<string, string>();
+  for (const title of titles) {
+    latestTitles.set(normalize(title), title);
   }
-  setItem(KEYS.recHistory, [...existing, ...newEntries].slice(-MAX_REC_HISTORY));
+  const historyByTitle = new Map(
+    existing.map((entry) => [normalize(entry.title), entry])
+  );
+
+  for (const [key, title] of latestTitles.entries()) {
+    historyByTitle.set(key, {
+      title,
+      recommendedAt: now,
+      prefHash,
+    });
+  }
+
+  const updated = Array.from(historyByTitle.values())
+    .sort((a, b) => a.recommendedAt - b.recommendedAt)
+    .slice(-MAX_REC_HISTORY);
+
+  setItem(KEYS.recHistory, updated);
 }
 
 export function clearRecHistory() {
@@ -367,12 +433,17 @@ export function exportGuestData() {
     preferences: getCurrentPreferences(),
     sessions: getSessions(),
     savedGames: getSavedGames(),
+    notInterested: getNotInterestedTitles(),
+    alreadyPlayed: getAlreadyPlayedTitles(),
   };
 }
 
 export function clearGuestData() {
+  if (typeof window === "undefined") return;
   Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
   // Clean up keys managed outside the KEYS map
   localStorage.removeItem("wsipn_rec_feedback");
   localStorage.removeItem("wsipn_previously_shown");
+  sessionStorage.removeItem("wsipn_previously_shown");
+  window.dispatchEvent(new CustomEvent(GUEST_STORAGE_EVENT, { detail: { key: "all" } }));
 }

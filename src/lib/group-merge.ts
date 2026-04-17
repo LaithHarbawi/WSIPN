@@ -1,4 +1,4 @@
-import type { TasteProfile, GameEntry, CurrentPreferences, Difficulty, GameLength, PlayerMode, Era, TimeCommitment } from "./types";
+import type { TasteProfile, CurrentPreferences, Difficulty, GameLength, PlayerMode, Era, TimeCommitment } from "./types";
 
 // ── Group Types ──
 
@@ -140,6 +140,7 @@ function buildConsensusPreferences(participants: GroupParticipant[]): CurrentPre
     difficulty: "No preference",
     gameLength: "No preference",
     playerMode: "Any",
+    crossplayCompatible: false,
     era: "Any era",
     timeCommitment: "Varies / No preference",
     platforms: [],

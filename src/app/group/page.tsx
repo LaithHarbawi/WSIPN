@@ -20,6 +20,7 @@ const defaultPreferences: CurrentPreferences = {
   difficulty: "No preference",
   gameLength: "No preference",
   playerMode: "Any",
+  crossplayCompatible: false,
   era: "Any era",
   timeCommitment: "Varies / No preference",
   platforms: [],

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { generateStoreLinks } from "@/lib/affiliate";
@@ -57,9 +58,12 @@ export function StepResults({
               <div className="flex gap-4 p-4">
                 {/* Cover image */}
                 {rec.imageUrl ? (
-                  <img
+                  <Image
                     src={rec.imageUrl}
                     alt=""
+                    width={80}
+                    height={112}
+                    sizes="80px"
                     className="w-20 h-28 rounded-xl object-cover flex-shrink-0 bg-bg-tertiary shadow-card"
                   />
                 ) : (
